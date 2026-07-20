@@ -1,0 +1,21 @@
+{
+  "name": "bidmatrix",
+  "version": "0.1.0",
+  "private": true,
+  "description": "BidMatrix Foundation Release F0 monorepo.",
+  "engines": {
+    "node": ">=24 <25"
+  },
+  "scripts": {
+    "dev": "npm --prefix apps/web run dev",
+    "build": "npm --prefix apps/web run build",
+    "lint": "npm --prefix apps/web run lint",
+    "typecheck": "npm --prefix apps/web run typecheck",
+    "test": "npm --prefix apps/web run test",
+    "backend:build": "dotnet build BidMatrix.slnx",
+    "backend:test": "dotnet test BidMatrix.slnx --no-build",
+    "agents:lint": "uv run --directory src/agents ruff check .",
+    "agents:typecheck": "uv run --directory src/agents mypy",
+    "agents:test": "uv run --directory src/agents pytest"
+  }
+}

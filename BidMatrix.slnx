@@ -1,0 +1,15 @@
+<Solution>
+  <Folder Name="/src/" />
+  <Folder Name="/src/backend/">
+    <Project Path="src/backend/BidMatrix.Api/BidMatrix.Api.csproj" />
+    <Project Path="src/backend/BidMatrix.Application/BidMatrix.Application.csproj" />
+    <Project Path="src/backend/BidMatrix.Contracts/BidMatrix.Contracts.csproj" />
+    <Project Path="src/backend/BidMatrix.Database/BidMatrix.Database.csproj" />
+    <Project Path="src/backend/BidMatrix.Domain/BidMatrix.Domain.csproj" />
+    <Project Path="src/backend/BidMatrix.Infrastructure/BidMatrix.Infrastructure.csproj" />
+  </Folder>
+  <Folder Name="/tests/" />
+  <Folder Name="/tests/backend-integration/">
+    <Project Path="tests/backend-integration/BidMatrix.Api.IntegrationTests/BidMatrix.Api.IntegrationTests.csproj" />
+  </Folder>
+</Solution>

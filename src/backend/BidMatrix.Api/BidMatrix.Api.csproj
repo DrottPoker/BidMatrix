@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <ItemGroup>
+    <ProjectReference Include="..\BidMatrix.Application\BidMatrix.Application.csproj" />
+    <ProjectReference Include="..\BidMatrix.Contracts\BidMatrix.Contracts.csproj" />
+    <ProjectReference Include="..\BidMatrix.Infrastructure\BidMatrix.Infrastructure.csproj" />
+    <ProjectReference Include="..\BidMatrix.Database\BidMatrix.Database.csproj" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+</Project>
