@@ -1,0 +1,8 @@
+{
+  "goalIds": ["goal-improve-intake-reliability"],
+  "taskSummary": {"open": 3, "blocked": 1},
+  "metricsSnapshot": {"analysesSubmitted": 12, "manualReviewBacklog": 4},
+  "openApprovals": [],
+  "openIncidents": [],
+  "timeWindow": {"from": "2030-01-01", "to": "2030-01-07"}
+}

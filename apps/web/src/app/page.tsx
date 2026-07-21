@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Workflow,
 } from "lucide-react";
+import Link from "next/link";
 import { PhaseCard } from "@/components/phase-card";
 import { foundationMetrics, foundationPhases } from "@/data/foundation";
 
@@ -39,9 +40,9 @@ const principles = [
 
 const services = [
   { name: "Web shell", runtime: "Next.js 16 + Tailwind 4", state: "Installed" },
-  { name: "API boundary", runtime: ".NET 10", state: "Scaffolded" },
-  { name: "Agent worker", runtime: "Python 3.14", state: "Scaffolded" },
-  { name: "Local stack", runtime: "Docker Compose", state: "Declared" },
+  { name: "API boundary", runtime: ".NET 10", state: "Verified" },
+  { name: "Agent worker", runtime: "Python 3.14", state: "Verified" },
+  { name: "Local stack", runtime: "Docker Compose", state: "Healthy" },
 ];
 
 const architectureNodes = [
@@ -63,6 +64,9 @@ export default function Home() {
             <span className="text-lg font-semibold tracking-tight">BidMatrix</span>
           </a>
           <nav className="hidden items-center gap-7 text-sm text-muted md:flex" aria-label="Primary navigation">
+            <Link className="transition hover:text-foreground" href="/app/analyses">
+              Analyses
+            </Link>
             <a className="transition hover:text-foreground" href="#architecture">
               Architecture
             </a>
@@ -120,7 +124,7 @@ export default function Home() {
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">
                   System snapshot
                 </p>
-                <h2 className="mt-1 text-lg font-semibold">Phase 1 infrastructure</h2>
+                <h2 className="mt-1 text-lg font-semibold">Foundation F0 runtime</h2>
               </div>
               <CloudCog aria-hidden="true" className="text-accent" size={28} />
             </div>

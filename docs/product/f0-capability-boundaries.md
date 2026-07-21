@@ -26,9 +26,10 @@ F0 may provide:
 - payload-bound approvals and audit records;
 - disabled adapters for every external side effect;
 - owner controls and kill switches.
+- fixture-only engineering worktrees, allowlisted validation commands, and reviewable diff artifacts.
 
 ## Explicit non-capabilities
 
 F0 does not provide OCR, document layout extraction, requirement extraction, compliance matching, bid/no-bid scoring, legal analysis, billing, customer API keys, outbound email, publication, production deployment, remote Git actions, or autonomous spending.
 
-The web application and documentation must not imply that any item in this section works. A stub, mock, schema, or disabled adapter does not make a capability complete.
+The web application and documentation must not imply that any item in this section works. A stub, fixture, schema, or disabled adapter does not make a capability complete.

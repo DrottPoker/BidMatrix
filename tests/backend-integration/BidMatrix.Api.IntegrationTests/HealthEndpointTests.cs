@@ -1,16 +1,16 @@
 using System.Net;
-using Microsoft.AspNetCore.Mvc.Testing;
 
 namespace BidMatrix.Api.IntegrationTests;
 
-public sealed class HealthEndpointTests(WebApplicationFactory<Program> factory)
-    : IClassFixture<WebApplicationFactory<Program>>
+[Collection(DatabaseCollection.Name)]
+public sealed class HealthEndpointTests(DatabaseFixture database)
 {
     [Fact]
-    public async Task ReadinessEndpointReturnsSuccess()
+    public async Task ReadinessEndpointReturnsSuccessWhenPostgresIsAvailable()
     {
+        using var factory = new BidMatrixApiFactory(database);
         using var client = factory.CreateClient();
-        using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+        using var cancellationSource = new CancellationTokenSource(TimeSpan.FromSeconds(10));
 
         using var response = await client.GetAsync("/health/ready", cancellationSource.Token);
 

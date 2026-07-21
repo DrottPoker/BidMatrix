@@ -1,0 +1,57 @@
+name: F0 quality gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.11.12
+      - run: npm --prefix apps/web ci
+      - run: dotnet restore BidMatrix.slnx
+      - run: uv sync --project src/agents --locked
+      - run: docker compose --env-file .env.example up --detach --wait postgres
+      - run: npm run lint && npm run typecheck && npm run test && npm run build
+      - run: dotnet build BidMatrix.slnx --no-restore
+      - run: dotnet test BidMatrix.slnx --no-build
+        env:
+          BIDMATRIX_TEST_POSTGRES_PORT: "55432"
+      - run: uv run --directory src/agents ruff check .
+      - run: uv run --directory src/agents mypy
+      - run: uv run --directory src/agents pytest
+      - if: always()
+        run: docker compose --env-file .env.example down --volumes
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --env-file .env.example config --quiet
+      - run: docker compose --env-file .env.example up --detach --build --wait
+      - run: pwsh ./scripts/verify-f0.ps1
+      - if: always()
+        run: docker compose --env-file .env.example logs --no-color
+      - if: always()
+        run: docker compose --env-file .env.example down --volumes

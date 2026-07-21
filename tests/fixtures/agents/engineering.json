@@ -1,0 +1,8 @@
+{
+  "taskId": "fixture-engineering-task",
+  "repositoryPath": "fixtures/repositories/documentation-demo",
+  "baseRevision": "fixture-v1",
+  "requirements": ["Add a short support note to README.md"],
+  "allowedCommands": ["git diff --check"],
+  "constraints": ["No network", "No remote Git actions", "Documentation only"]
+}

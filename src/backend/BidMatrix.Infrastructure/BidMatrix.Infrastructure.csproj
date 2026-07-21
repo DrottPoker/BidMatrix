@@ -2,7 +2,14 @@
 
   <ItemGroup>
     <ProjectReference Include="..\BidMatrix.Application\BidMatrix.Application.csproj" />
+    <ProjectReference Include="..\BidMatrix.Database\BidMatrix.Database.csproj" />
     <ProjectReference Include="..\BidMatrix.Domain\BidMatrix.Domain.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AWSSDK.S3" Version="4.0.101.3" />
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    <PackageReference Include="Npgsql" Version="10.0.1" />
   </ItemGroup>
 
   <PropertyGroup>

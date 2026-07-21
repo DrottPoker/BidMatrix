@@ -9,6 +9,10 @@ ENV PYTHONUNBUFFERED=1
 ENV UV_COMPILE_BYTECODE=1
 ENV UV_LINK_MODE=copy
 
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends libgssapi-krb5-2 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY --from=uv /uv /usr/local/bin/uv
 COPY src/agents/pyproject.toml src/agents/uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project

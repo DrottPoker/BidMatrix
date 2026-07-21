@@ -9,6 +9,8 @@ from typing import Any
 class HealthState:
     temporal_connected: bool = False
     temporal_detail: str = "Connection pending"
+    api_connected: bool = False
+    api_detail: str = "Connection pending"
 
 
 def build_health_payload(path: str, state: HealthState) -> tuple[HTTPStatus, dict[str, Any]]:
@@ -16,14 +18,18 @@ def build_health_payload(path: str, state: HealthState) -> tuple[HTTPStatus, dic
         return HTTPStatus.OK, {"status": "healthy"}
 
     if path == "/health/ready":
-        status = HTTPStatus.OK if state.temporal_connected else HTTPStatus.SERVICE_UNAVAILABLE
-        return status, {
-            "status": "healthy" if state.temporal_connected else "notReady",
+        ready = state.temporal_connected and state.api_connected
+        return (HTTPStatus.OK if ready else HTTPStatus.SERVICE_UNAVAILABLE), {
+            "status": "healthy" if ready else "notReady",
             "checks": {
                 "temporal": {
                     "connected": state.temporal_connected,
                     "detail": state.temporal_detail,
-                }
+                },
+                "api": {
+                    "connected": state.api_connected,
+                    "detail": state.api_detail,
+                },
             },
         }
 
@@ -44,7 +50,7 @@ async def handle_health_request(
             status, payload = HTTPStatus.METHOD_NOT_ALLOWED, {"status": "methodNotAllowed"}
         else:
             status, payload = build_health_payload(path, state)
-    except (TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError):
+    except TimeoutError, asyncio.IncompleteReadError, asyncio.LimitOverrunError, ValueError:
         status, payload = HTTPStatus.BAD_REQUEST, {"status": "badRequest"}
 
     body = json.dumps(payload, separators=(",", ":")).encode("utf-8")

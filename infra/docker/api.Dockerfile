@@ -19,8 +19,20 @@ RUN dotnet publish src/backend/BidMatrix.Api/BidMatrix.Api.csproj \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0.10 AS runtime
 WORKDIR /app
 COPY --from=build /app ./
+COPY tests/fixtures/engineering/repository /var/lib/bidmatrix/engineering/repository
 
 ENV ASPNETCORE_HTTP_PORTS=8080
+RUN apt-get update \
+    && apt-get install --yes --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/* \
+    && git -C /var/lib/bidmatrix/engineering/repository init --initial-branch=main \
+    && git -C /var/lib/bidmatrix/engineering/repository config user.email sandbox@bidmatrix.invalid \
+    && git -C /var/lib/bidmatrix/engineering/repository config user.name "BidMatrix Sandbox Fixture" \
+    && git -C /var/lib/bidmatrix/engineering/repository add README.md \
+    && git -C /var/lib/bidmatrix/engineering/repository commit -m "Create engineering sandbox fixture" \
+    && git -C /var/lib/bidmatrix/engineering/repository tag fixture-v1 \
+    && mkdir -p /var/lib/bidmatrix/data-protection /var/lib/bidmatrix/engineering/worktrees \
+    && chown -R $APP_UID:$APP_UID /var/lib/bidmatrix
 EXPOSE 8080
 USER $APP_UID
 ENTRYPOINT ["dotnet", "BidMatrix.Api.dll"]

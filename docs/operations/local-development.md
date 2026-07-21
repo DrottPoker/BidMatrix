@@ -93,6 +93,16 @@ uv run --project src/agents python -m bidmatrix_agents.worker
 
 The worker readiness endpoint remains unavailable until it can connect to Temporal. No OpenAI API key is required in Development.
 
+## Essential end-to-end verification
+
+With the healthy stack running:
+
+```powershell
+.\scripts\verify-f0.ps1
+```
+
+The script signs in with the Development owner, uploads the synthetic PDF, verifies the honest empty-requirements response, waits for manual review, runs all four offline agents, confirms the engineering sandbox record, and checks the draft-only, disabled-external, and audit-chain states.
+
 ## Cloud continuation
 
 The Compose topology is a development environment, not a production deployment template. Cloud work should preserve the API authority boundary and replace infrastructure through adapters: managed PostgreSQL, private S3-compatible storage, a supported Temporal deployment or Temporal Cloud, and secret-manager supplied configuration. Production deployment remains outside F0 and requires owner approval.

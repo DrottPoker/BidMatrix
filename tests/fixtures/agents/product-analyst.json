@@ -1,0 +1,10 @@
+{
+  "metrics": [
+    {"key": "intakeCompletionRate", "value": 0.72, "sampleSize": 25},
+    {"key": "manualReviewMinutesMedian", "value": 18, "sampleSize": 12}
+  ],
+  "supportThemes": ["Customers need clearer intake status"],
+  "analysisFailures": [{"code": "invalid_pdf", "count": 3}],
+  "ownerGoals": ["Improve trustworthy onboarding"],
+  "period": {"from": "2030-01-01", "to": "2030-01-31"}
+}

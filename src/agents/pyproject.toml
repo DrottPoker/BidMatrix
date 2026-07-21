@@ -28,7 +28,7 @@ dev = [
 packages = ["bidmatrix_agents"]
 
 [tool.pytest.ini_options]
-addopts = "-q"
+addopts = "-q -p no:cacheprovider"
 testpaths = ["tests"]
 
 [tool.ruff]

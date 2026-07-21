@@ -4,9 +4,33 @@ import logging
 import signal
 
 from temporalio.client import Client
+from temporalio.worker import Worker
 
+from bidmatrix_agents.activities.agent_task import (
+    fail_agent_task,
+    materialize_agent_output,
+    prepare_agent_task,
+    run_structured_agent,
+)
+from bidmatrix_agents.activities.analysis_intake import (
+    create_manual_review_task,
+    load_analysis_intake,
+    mark_analysis_processing,
+    mark_analysis_requires_review,
+)
+from bidmatrix_agents.activities.approval import expire_approval
+from bidmatrix_agents.event_bridge import run_event_bridge
 from bidmatrix_agents.health import HealthState, serve_health
 from bidmatrix_agents.settings import WorkerSettings
+from bidmatrix_agents.workflows.agent_tasks import (
+    AgentTaskWorkflow,
+    DailyExecutiveBriefWorkflow,
+    EngineeringTaskWorkflow,
+    ProductReviewWorkflow,
+    SupportDraftWorkflow,
+)
+from bidmatrix_agents.workflows.analysis_intake import AnalysisIntakeWorkflow
+from bidmatrix_agents.workflows.approval import ApprovalWorkflow
 
 logger = logging.getLogger(__name__)
 
@@ -61,13 +85,46 @@ async def run() -> None:
         name="health-server",
     )
 
+    worker: Worker | None = None
+    worker_task: asyncio.Task[None] | None = None
+    bridge_task: asyncio.Task[None] | None = None
     try:
         client = await connect_to_temporal(settings, state, stop_event)
         if client is None:
             return
 
+        worker = Worker(
+            client,
+            task_queue=settings.temporal_task_queue,
+            workflows=[
+                AnalysisIntakeWorkflow,
+                ApprovalWorkflow,
+                AgentTaskWorkflow,
+                DailyExecutiveBriefWorkflow,
+                SupportDraftWorkflow,
+                ProductReviewWorkflow,
+                EngineeringTaskWorkflow,
+            ],
+            activities=[
+                load_analysis_intake,
+                mark_analysis_processing,
+                create_manual_review_task,
+                mark_analysis_requires_review,
+                expire_approval,
+                prepare_agent_task,
+                run_structured_agent,
+                materialize_agent_output,
+                fail_agent_task,
+            ],
+        )
+        worker_task = asyncio.create_task(worker.run(), name="temporal-worker")
+        bridge_task = asyncio.create_task(
+            run_event_bridge(client, settings, state, stop_event),
+            name="outbox-event-bridge",
+        )
+
         logger.info(
-            "Agent worker host connected to Temporal namespace %s for task queue %s",
+            "Agent worker started in Temporal namespace %s on task queue %s",
             settings.temporal_namespace,
             settings.temporal_task_queue,
         )
@@ -75,6 +132,18 @@ async def run() -> None:
     finally:
         state.temporal_connected = False
         state.temporal_detail = "Shutting down"
+        state.api_connected = False
+        state.api_detail = "Shutting down"
+
+        if bridge_task is not None:
+            bridge_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await bridge_task
+        if worker is not None:
+            await worker.shutdown()
+        if worker_task is not None:
+            await worker_task
+
         health_task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await health_task

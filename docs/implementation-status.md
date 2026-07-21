@@ -2,78 +2,53 @@
 
 Last updated: 2026-07-20
 
-## Current release target
+## Release state
 
-Foundation Release F0 is the active and bounded target. The authoritative scope is defined in `BIDMATRIX_AI_COMPANY_MASTER_PLAN.md`. Later roadmap capabilities are out of scope until every F0 phase gate has been satisfied in order.
+Foundation Release F0 is implemented and verified locally. Phases 0 through 9 satisfy their bounded acceptance gates. This is a cloud-portable development foundation, not authorization for production deployment or post-F0 product capabilities.
 
-Phases 0 and 1 are complete. Phase 2 is the next permitted implementation boundary.
-
-## Repository assessment
-
-The repository started with only a short README in Git. An uncommitted Vite, React, and TypeScript dashboard prototype was subsequently added. It provided useful visual direction, a reusable stage-card concept, foundation data, and a bid scoring demonstration.
-
-The prototype conflicted with the authoritative F0 specification because it used Vite instead of Next.js, presented scoring that is outside F0, had floating dependencies, and lacked the required API, worker, data, storage, workflow, policy, and audit boundaries.
-
-The useful visual direction and stage-card concept have been adapted into the Next.js product shell. The Vite runtime and scoring demonstration were removed. The F0 interface now labels unavailable capabilities honestly.
+The initial uncommitted Vite and bid-scoring prototype was assessed and adapted into the required Next.js and Tailwind stack. Vite, JavaScript-only conversion, and fake bid scoring are not part of the active application.
 
 ## Phase status
 
-| Phase | Status | Evidence and remaining gate |
+| Phase | Status | Verified result |
 | --- | --- | --- |
-| 0. Repository assessment and decisions | Complete | Repository conflict assessment, seven accepted ADRs, runtime files, formatting defaults, implementation status, and a verified build baseline exist. |
-| 1. Monorepo and local infrastructure | Complete | .NET solution, Python package, Next.js and Tailwind app, pinned Compose stack, health checks, environment template, lockfiles, and local setup documentation are present. The full stack reached healthy state without an OpenAI key. |
-| 2. Database and core domain | Ready, not started | Next boundary. Requires authoritative migrations, tenant model, core OS records, development seed, RLS, and tenant tests. |
-| 3. Authentication and API foundations | Not started | Blocked by Phase 2 acceptance. |
-| 4. Upload and minimal analysis pipeline | Not started | Blocked by Phase 3 acceptance. |
-| 5. Tool Gateway, Policy Engine, and approvals | Not started | Blocked by Phase 4 acceptance. |
-| 6. Four agents and workflows | Not started | Blocked by Phase 5 acceptance. |
-| 7. Owner Console and customer shell | Not started | Blocked by Phase 6 acceptance. |
-| 8. Engineering sandbox foundation | Not started | Blocked by Phase 7 acceptance. |
-| 9. Quality, documentation, and release gate | Not started | Blocked by Phase 8 acceptance. |
+| 0. Repository assessment and decisions | Complete | Repository assessment, runtime pins, formatting, status record, and eight accepted ADRs. |
+| 1. Monorepo and local infrastructure | Complete | Next.js, ASP.NET Core, Python, PostgreSQL, MinIO, Temporal, and Docker Compose all reach healthy state without an OpenAI key. |
+| 2. Database and core domain | Complete | Seven forward-only migrations apply to empty PostgreSQL; application and audit roles are separate; 17 tenant-sensitive tables use RLS; audit mutation is rejected. |
+| 3. Authentication and API foundations | Complete | Owner bootstrap, login/logout/me, organization context, CSRF, owner/customer/internal authorization, OpenAPI, problem details, and correlation IDs are tested. |
+| 4. Upload and minimal analysis pipeline | Complete | Valid PDF upload is hashed and quarantined; Development scan bypass is forbidden outside Development; Temporal creates one manual-review task; requirements remain explicitly unimplemented. |
+| 5. Tool Gateway, policy, and approvals | Complete | Role permission, deterministic policy, idempotency, canonical payload hashes, revision, race, expiry, disabled adapters, and audit tests pass. |
+| 6. Four agents and workflows | Complete | Four versioned prompts and strict outputs have deterministic demos; support injection does not gain tools; invalid output fails rather than completes. |
+| 7. Owner Console and customer shell | Complete | Required owner and customer pages use live APIs; exact approval payload is visible; customer navigation contains no OS pages; draft-only state is prominent. |
+| 8. Engineering sandbox foundation | Complete | Generated Git worktree, containment, traversal, junction, secret, command, timeout, output, base-integrity, diff, and remote-action gates pass. |
+| 9. Quality, documentation, and release gate | Complete | Architecture, threat model, runbooks, evaluations, CI, dependency scanning, essential end-to-end script, and current verification record are present. |
 
 ## Capability truth table
 
-| Capability | Current state | Customer claim allowed |
+| Capability | F0 state | Honest outward claim |
 | --- | --- | --- |
-| Foundation product shell | Implemented in Next.js and Tailwind CSS | Yes, as a foundation shell only |
-| Bid scoring | Removed and outside F0 | No |
-| Authentication | Not implemented | No |
-| PDF quarantine upload | Not implemented | No |
-| Analysis workflow | Not implemented | No |
-| AI agents | Runtime dependencies installed, definitions not implemented | No |
-| Tool Gateway and approvals | Not implemented | No |
+| Customer and owner authentication | Implemented | Organization workspace and owner console are available. |
+| PDF intake | Implemented | English PDF files are validated, hashed, and stored in quarantine. |
+| RFP requirement extraction | Not implemented | Manual review is required; no requirements are generated. |
+| Four internal agents | Implemented in deterministic mode | Offline, structured, draft-only demonstrations are available. |
+| Live model mode | Opt-in adapter only | Not part of the verified default gate. |
+| Tool Gateway and policy | Implemented | All agent tools cross the deterministic boundary. |
+| Owner approvals | Implemented | Decisions are payload-bound, versioned, expiring, and audited. |
+| External communication and spending | Disabled | Approval does not execute an external effect in F0. |
+| Engineering code preparation | Fixture-only foundation | A documentation diff can be prepared in an isolated worktree. |
+| Remote Git and deployment | Disabled | No push, PR, merge, or deployment occurs. |
 
-## Phase 1 service gate
+## Current verification record
 
-The Compose stack was built and started from the checked-in definitions. These endpoints returned HTTP 200 and every long-running service reported healthy:
+- Next.js/Tailwind: lint, TypeScript generation and check, three Vitest tests, and production build pass.
+- .NET: build passes with zero warnings; 25 integration and policy tests pass against disposable PostgreSQL.
+- Python: Ruff and strict mypy pass; 12 pytest cases pass.
+- Contract surface: Development OpenAPI includes required customer, owner, demo, and internal routes.
+- Dependencies: npm production audit, NuGet transitive vulnerability scan, and pip-audit report no known vulnerabilities. The local Python package itself is skipped because it is not published to PyPI.
+- Compose: configuration validates; all six long-running services are healthy from pinned images.
+- Essential end to end: analysis reaches `requires_review`; four agent runs complete; engineering sandbox is recorded; audit chain is valid; draft-only and disabled-external controls remain active.
+- Engineering runtime: artifact, worktree, write, allowlisted command, and diff calls complete; remote Git call count is zero; base fixture remains clean.
 
-| Service | Verified endpoint |
-| --- | --- |
-| Next.js web | `http://localhost:3000` |
-| ASP.NET Core API | `http://localhost:8080/api` |
-| API readiness | `http://localhost:8080/health/ready` |
-| Python worker readiness | `http://localhost:8081/health/ready` |
-| Temporal UI | `http://localhost:8233` |
-| PostgreSQL 18.4 | Compose health check on host port `55432` |
-| MinIO | Compose health check; quarantine and private buckets created |
+## Explicit post-F0 boundary
 
-The locally available host versions are .NET SDK 10.0.302, Python 3.14.4, Docker 29.6.1, Docker Compose v5.3.0, and Node.js 22.14.0. The pinned container targets are .NET SDK 10.0.302, ASP.NET 10.0.10, Python 3.14.6, and Node.js 24.18.0. Local npm installation also completed successfully, but the pinned Node 24 image is the verified cloud-portable build baseline.
-
-## Verification record
-
-- `npm ci`: 545 packages installed from lockfile, 0 vulnerabilities.
-- `npm run lint`: passed with zero warnings.
-- `npm run typecheck`: passed.
-- `npm run test`: 1 test passed.
-- `npm run build`: production build passed.
-- `dotnet build BidMatrix.slnx --no-restore`: passed with 0 warnings and 0 errors.
-- `dotnet test BidMatrix.slnx --no-build`: 1 integration test passed.
-- `uv run --offline --directory src/agents ruff check .`: passed.
-- `uv run --offline --directory src/agents mypy`: passed for 4 source files.
-- `uv run --offline --directory src/agents pytest`: 2 tests passed.
-- `docker compose --env-file .env.example config --quiet`: passed.
-- `docker compose --env-file .env.example build`: all three application images built.
-- `docker compose --env-file .env.example up --detach --wait`: all long-running services became healthy.
-- Secret-shaped value scan found no committed credential material. Development values remain explicit placeholders.
-
-No commit, push, remote branch, pull request, or deployment was performed.
+No cloud deployment was performed. Real malware scanning, OCR, extraction, scoring, live-model qualification, external actions, billing, dedicated production sandbox infrastructure, and production operations require a new owner-approved phase.
