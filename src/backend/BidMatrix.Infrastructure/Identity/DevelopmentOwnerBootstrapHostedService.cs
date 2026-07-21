@@ -35,15 +35,8 @@ internal sealed class DevelopmentOwnerBootstrapHostedService(
             throw new InvalidOperationException("OWNER_BOOTSTRAP_EMAIL must be a valid email address.");
         }
 
-        if (password.Length is < 16 or > 256)
-        {
-            throw new InvalidOperationException("OWNER_BOOTSTRAP_PASSWORD must contain between 16 and 256 characters.");
-        }
-
         var normalizedEmail = email.ToUpperInvariant();
         var subject = new AuthenticationPasswordSubject(OwnerUserId);
-        var passwordHash = passwordHasher.HashPassword(subject, password);
-
         await using var dataSource = NpgsqlDataSource.Create(databaseOptions.BuildMigrationConnectionString());
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
@@ -52,18 +45,19 @@ internal sealed class DevelopmentOwnerBootstrapHostedService(
         await EnsureOwnerOrganizationAsync(connection, transaction, cancellationToken);
         await EnsureOwnerMembershipAsync(connection, transaction, cancellationToken);
         await EnsurePlatformRoleAsync(connection, transaction, cancellationToken);
-        var credentialCreated = await CreateCredentialAsync(
+        var credentialChanged = await SynchronizeCredentialAsync(
             connection,
             transaction,
-            passwordHash,
+            subject,
+            password,
             cancellationToken);
 
         await transaction.CommitAsync(cancellationToken);
 
         logger.LogInformation(
-            credentialCreated
-                ? "Development owner credential was bootstrapped from environment configuration."
-                : "Development owner credential already exists; bootstrap password was not reapplied.");
+            credentialChanged
+                ? "Development owner credential was synchronized from environment configuration."
+                : "Development owner credential already matches environment configuration.");
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
@@ -158,12 +152,29 @@ internal sealed class DevelopmentOwnerBootstrapHostedService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task<bool> CreateCredentialAsync(
+    private async Task<bool> SynchronizeCredentialAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
-        string passwordHash,
+        AuthenticationPasswordSubject subject,
+        string password,
         CancellationToken cancellationToken)
     {
+        string? existingPasswordHash;
+        await using (var existingCommand = connection.CreateCommand())
+        {
+            existingCommand.Transaction = transaction;
+            existingCommand.CommandText = "select password_hash from user_credentials where user_id = $1 for update";
+            existingCommand.Parameters.AddWithValue(OwnerUserId);
+            existingPasswordHash = (string?)await existingCommand.ExecuteScalarAsync(cancellationToken);
+        }
+
+        if (existingPasswordHash is not null &&
+            passwordHasher.VerifyHashedPassword(subject, existingPasswordHash, password) is not PasswordVerificationResult.Failed)
+        {
+            return false;
+        }
+
+        var passwordHash = passwordHasher.HashPassword(subject, password);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText = """
@@ -179,11 +190,19 @@ internal sealed class DevelopmentOwnerBootstrapHostedService(
                 version
             )
             values ($1, $2, 0, null, $3, now(), now(), now(), 1)
-            on conflict (user_id) do nothing
+            on conflict (user_id) do update
+            set password_hash = excluded.password_hash,
+                failed_access_count = 0,
+                lockout_end = null,
+                security_stamp = excluded.security_stamp,
+                password_changed_at = now(),
+                updated_at = now(),
+                version = user_credentials.version + 1
             """;
         command.Parameters.AddWithValue(OwnerUserId);
         command.Parameters.AddWithValue(passwordHash);
         command.Parameters.AddWithValue(Guid.CreateVersion7());
-        return await command.ExecuteNonQueryAsync(cancellationToken) == 1;
+        await command.ExecuteNonQueryAsync(cancellationToken);
+        return true;
     }
 }
