@@ -27,9 +27,9 @@ internal static class AgentDemoFixtures
               ],
               "customerContext": {"plan": "fixture", "analysisStatus": "requires_review"},
               "approvedKnowledge": [
-                {"sourceId": "product-facts-f0", "fact": "Automated requirement extraction is not implemented in F0."}
+                {"sourceId": "product-facts-f1", "fact": "F1 produces sourced requirement candidates that always require human review."}
               ],
-              "supportPolicyVersion": "f0-v1",
+              "supportPolicyVersion": "f1-v1",
               "senderProfile": "BidMatrix Support"
             }
             """),
@@ -55,7 +55,7 @@ internal static class AgentDemoFixtures
               "constraints": ["No network", "No remote Git actions", "Documentation only"]
             }
             """),
-        _ => throw new InvalidOperationException($"No F0 demo fixture exists for agent {agentKey}."),
+        _ => throw new InvalidOperationException($"No F1 demo fixture exists for agent {agentKey}."),
     };
 
     private static JsonElement Parse(string json) => CanonicalJson.ParseNormalized(json);

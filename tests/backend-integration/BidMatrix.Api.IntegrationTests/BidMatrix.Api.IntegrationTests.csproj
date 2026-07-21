@@ -12,6 +12,7 @@
     <PackageReference Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.10" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
     <PackageReference Include="Npgsql" Version="10.0.1" />
+    <PackageReference Include="PdfPig" Version="0.1.15" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
   </ItemGroup>
@@ -23,6 +24,12 @@
   <ItemGroup>
     <ProjectReference Include="..\..\..\src\backend\BidMatrix.Api\BidMatrix.Api.csproj" />
     <ProjectReference Include="..\..\..\src\backend\BidMatrix.Database\BidMatrix.Database.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\..\fixtures\rfp\f1-evaluation-set.json"
+             Link="Fixtures\f1-evaluation-set.json"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

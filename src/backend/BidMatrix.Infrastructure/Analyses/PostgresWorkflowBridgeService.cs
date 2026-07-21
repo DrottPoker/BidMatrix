@@ -258,8 +258,8 @@ public sealed class PostgresWorkflowBridgeService(
                     $1,
                     $2,
                     'analysis_manual_review',
-                    'Review quarantined RFP analysis',
-                    'Review file metadata and confirm the analysis can proceed when real extraction is introduced.',
+                    'Review extracted RFP requirements',
+                    'Review every extracted requirement, mandatory flag, confidence value, and page citation before use.',
                     'normal',
                     'waiting_for_input',
                     null,
@@ -279,7 +279,13 @@ public sealed class PostgresWorkflowBridgeService(
             insert.Parameters.AddWithValue(organizationId);
             insert.Parameters.AddWithValue(JsonSerializer.Serialize(new { analysisId }, JsonOptions));
             insert.Parameters.AddWithValue(JsonSerializer.Serialize(
-                new { extractionAllowed = false, requiresHumanReview = true },
+                new
+                {
+                    extractionAllowed = true,
+                    requiresHumanReview = true,
+                    citationsRequired = true,
+                    correctionsDeferredToF2 = true,
+                },
                 JsonOptions));
             insert.Parameters.AddWithValue(now);
             insert.Parameters.AddWithValue(idempotencyKey);
@@ -395,7 +401,7 @@ public sealed class PostgresWorkflowBridgeService(
                 organizationId,
                 analysisId,
                 "analysis.requires_review",
-                "Analysis intake completed without fabricated requirements and requires manual review.",
+                "F1 extraction completed and requires manual review before requirements can be relied upon.",
                 correlationId,
                 cancellationToken);
         }

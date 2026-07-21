@@ -613,7 +613,7 @@ public sealed class PostgresAnalysisService(
 
         if (bytes.IndexOf(PdfEncryptMarker) >= 0)
         {
-            throw InvalidPdf("Encrypted PDFs are not supported in Foundation Release F0.");
+            throw InvalidPdf("Encrypted PDFs are not supported by the current extraction pipeline.");
         }
 
         return originalFileName;

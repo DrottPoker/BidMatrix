@@ -78,7 +78,7 @@ public sealed class PostgresAgentRuntimeService(
             task.Parameters.AddWithValue(command.OrganizationId);
             task.Parameters.AddWithValue(ToTaskType(command.AgentKey));
             task.Parameters.AddWithValue($"{ToDisplayName(command.AgentKey)} offline demonstration");
-            task.Parameters.AddWithValue("F0 deterministic offline agent demonstration.");
+            task.Parameters.AddWithValue("F1 deterministic offline agent demonstration.");
             task.Parameters.AddWithValue(command.AgentKey);
             task.Parameters.AddWithValue(normalizedInput);
             task.Parameters.AddWithValue(JsonSerializer.Serialize(new

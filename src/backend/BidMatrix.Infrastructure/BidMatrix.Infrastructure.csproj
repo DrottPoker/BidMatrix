@@ -10,6 +10,7 @@
     <PackageReference Include="AWSSDK.S3" Version="4.0.101.3" />
     <FrameworkReference Include="Microsoft.AspNetCore.App" />
     <PackageReference Include="Npgsql" Version="10.0.1" />
+    <PackageReference Include="PdfPig" Version="0.1.15" />
   </ItemGroup>
 
   <PropertyGroup>

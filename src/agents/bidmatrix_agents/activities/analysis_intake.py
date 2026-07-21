@@ -36,6 +36,13 @@ async def mark_analysis_processing(request: AnalysisIntakeInput) -> None:
         await _run_api_call(lambda: client.mark_processing(request))
 
 
+@activity.defn(name="extract_analysis_documents")
+async def extract_analysis_documents(request: AnalysisIntakeInput) -> str:
+    settings = WorkerSettings()
+    async with InternalApiClient(settings) as client:
+        return await _run_api_call(lambda: client.extract_analysis(request))
+
+
 @activity.defn(name="create_manual_review_task")
 async def create_manual_review_task(request: AnalysisIntakeInput) -> str:
     settings = WorkerSettings()

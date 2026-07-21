@@ -158,7 +158,7 @@ type Goal = {
 };
 
 const sectionTitles: Record<Section, { title: string; description: string }> = {
-  dashboard: { title: "Operating dashboard", description: "Live F0 state from the authoritative API." },
+  dashboard: { title: "Operating dashboard", description: "Live F1 state from the authoritative API." },
   tasks: { title: "Tasks", description: "Create, inspect, filter, and safely cancel internal work." },
   approvals: { title: "Approvals", description: "Review the exact normalized payload before deciding." },
   agents: { title: "Agents", description: "The four versioned roles, permissions, usage, and offline demos." },
@@ -358,7 +358,7 @@ function ApprovalsView({ refreshKey, onError }: ViewProps) {
               <dt className="text-muted">Task</dt><dd className="font-mono">{approval.taskId ?? "none"}</dd>
               <dt className="text-muted">Expires</dt><dd>{formatDate(approval.expiresAt)}</dd>
               <dt className="text-muted">Execution</dt><dd>{approval.executionStatus ?? "notStarted"}</dd>
-              <dt className="text-muted">Adapter</dt><dd>{approval.technicallyEnabled ? "enabled" : "disabled in F0"}</dd>
+              <dt className="text-muted">Adapter</dt><dd>{approval.technicallyEnabled ? "enabled" : "disabled in F1"}</dd>
               <dt className="text-muted">Payload hash</dt><dd className="break-all font-mono">{approval.payloadHash}</dd>
             </dl>
             <div><p className="mb-2 text-xs font-bold uppercase tracking-wide text-muted">Exact normalized payload</p><JsonViewer value={approval.normalizedPayload} /></div>
@@ -454,7 +454,7 @@ function ControlsView({ refreshKey, onError }: ViewProps) {
     } catch (requestError) { onError(formatError(requestError)); }
   }
   if (loading) return <Loading />;
-  return <div className="space-y-3"><div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><strong>Owner-only control surface.</strong> Locked controls preserve draft-only operation and disabled external execution throughout F0.</div>{data?.controls.map((control) => <Panel key={control.controlKey} title={humanize(control.controlKey)} trailing={<Status status={control.enabled ? "enabled" : "disabled"} />}><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm text-muted">Updated {formatDate(control.updatedAt)} · version {control.version}</p><p className="mt-1 text-xs text-muted">{control.lockedForF0 ? "Locked to the safe F0 value." : "Owner-editable kill switch."}</p></div><button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45" disabled={control.lockedForF0} onClick={() => void toggle(control)} type="button">{control.enabled ? <CircleOff size={16} /> : <Play size={16} />}{control.enabled ? "Disable" : "Enable"}</button></div></Panel>)}</div>;
+  return <div className="space-y-3"><div className="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-sm text-amber-950"><strong>Owner-only control surface.</strong> Locked controls preserve draft-only operation and disabled external execution throughout F1.</div>{data?.controls.map((control) => <Panel key={control.controlKey} title={humanize(control.controlKey)} trailing={<Status status={control.enabled ? "enabled" : "disabled"} />}><div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center"><div><p className="text-sm text-muted">Updated {formatDate(control.updatedAt)} · version {control.version}</p><p className="mt-1 text-xs text-muted">{control.lockedForF0 ? "Locked to the safe baseline value." : "Owner-editable kill switch."}</p></div><button className="inline-flex h-10 items-center justify-center gap-2 rounded-xl border px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-45" disabled={control.lockedForF0} onClick={() => void toggle(control)} type="button">{control.enabled ? <CircleOff size={16} /> : <Play size={16} />}{control.enabled ? "Disable" : "Enable"}</button></div></Panel>)}</div>;
 }
 
 type ViewProps = { refreshKey: number; onError: (message: string | null) => void };

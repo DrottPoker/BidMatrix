@@ -132,8 +132,8 @@ export function AnalysisWorkspace({
             </Link>
             <h1 className="mt-3 text-4xl font-semibold tracking-tight">{heading}</h1>
             <p className="mt-3 max-w-2xl text-muted">
-              Upload English PDF files into quarantine. F0 creates a manual-review task and
-              never fabricates extracted requirements.
+              Upload digital English PDF files for page-preserving F1 extraction. Every sourced
+              requirement candidate remains pending mandatory human review.
             </p>
           </div>
           <button

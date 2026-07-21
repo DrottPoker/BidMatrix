@@ -27,6 +27,60 @@ export type Analysis = {
   files: AnalysisFile[];
 };
 
+export type AnalysisDocumentExtraction = {
+  analysisFileId: string;
+  originalFileName: string;
+  extractionStatus: string;
+  documentType: string | null;
+  pageCount: number | null;
+  extractionMethod: string | null;
+  failureCode: string | null;
+};
+
+export type AnalysisCitation = {
+  id: string;
+  analysisFileId: string;
+  originalFileName: string;
+  pageNumber: number;
+  sectionText: string | null;
+  quoteText: string;
+};
+
+export type AnalysisRequirement = {
+  id: string;
+  requirementCode: string | null;
+  requirementText: string;
+  normalizedRequirement: string;
+  category: string;
+  mandatory: boolean;
+  requestedEvidence: string | null;
+  confidence: number;
+  reviewStatus: string;
+  citations: AnalysisCitation[];
+};
+
+export type AnalysisExtractionMetrics = {
+  documentCount: number;
+  pageCount: number;
+  requirementCount: number;
+  mandatoryRequirementCount: number;
+  citedRequirementCount: number;
+  filesRequiringOcr: number;
+  failedFileCount: number;
+};
+
+export type AnalysisRequirements = {
+  analysisId: string;
+  capabilityStatus: string;
+  extractionStatus: string;
+  extractionVersion: string | null;
+  completedAt: string | null;
+  documents: AnalysisDocumentExtraction[];
+  requirements: AnalysisRequirement[];
+  metrics: AnalysisExtractionMetrics;
+  message: string;
+};
+
 type CsrfToken = {
   token: string;
   headerName: string;

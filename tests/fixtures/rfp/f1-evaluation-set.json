@@ -1,0 +1,54 @@
+{
+  "version": "f1-eval-v1",
+  "documents": [
+    {
+      "id": "managed-services-rfp",
+      "documentType": "request_for_proposal",
+      "pages": [
+        "REQUEST FOR PROPOSAL\nREQ-001: The supplier must provide 24/7 managed support.\nBackground information is not a requirement.",
+        "SECURITY REQUIREMENTS\nSEC-002: Proposals shall include a valid ISO 27001 certificate.\nPreferred providers should describe optional training."
+      ],
+      "expectedMandatoryRequirements": [
+        {
+          "normalizedRequirement": "the supplier must provide 24/7 managed support",
+          "pageNumber": 1
+        },
+        {
+          "normalizedRequirement": "proposals shall include a valid iso 27001 certificate",
+          "pageNumber": 2
+        }
+      ]
+    },
+    {
+      "id": "insurance-tender",
+      "documentType": "invitation_to_tender",
+      "pages": [
+        "INVITATION TO TENDER\nINS-001: The bidder is required to maintain professional indemnity insurance.\nThis section explains the procurement background.",
+        "SUBMISSION DEADLINE\nSUB-002: Responses must be received no later than 17:00 UTC on 30 June 2030."
+      ],
+      "expectedMandatoryRequirements": [
+        {
+          "normalizedRequirement": "the bidder is required to maintain professional indemnity insurance",
+          "pageNumber": 1
+        },
+        {
+          "normalizedRequirement": "responses must be received no later than 17:00 utc on 30 june 2030",
+          "pageNumber": 2
+        }
+      ]
+    },
+    {
+      "id": "availability-sow",
+      "documentType": "statement_of_work",
+      "pages": [
+        "STATEMENT OF WORK\nSLA-001: The provider shall maintain 99.9% monthly availability.\nThe provider may provide additional dashboards."
+      ],
+      "expectedMandatoryRequirements": [
+        {
+          "normalizedRequirement": "the provider shall maintain 99.9% monthly availability",
+          "pageNumber": 1
+        }
+      ]
+    }
+  ]
+}

@@ -77,7 +77,7 @@ async def materialize_agent_output(
                 "artifact.createDraft",
                 f"agent-output-{preparation.agent_run_id}",
                 {
-                    "title": f"{preparation.agent_key} F0 structured output",
+                    "title": f"{preparation.agent_key} F1 structured output",
                     "artifactType": f"{preparation.agent_key}_agent_output",
                     "content": execution.output,
                 },

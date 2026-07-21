@@ -1,54 +1,52 @@
 # Implementation status
 
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 ## Release state
 
-Foundation Release F0 is implemented and verified locally. Phases 0 through 9 satisfy their bounded acceptance gates. This is a cloud-portable development foundation, not authorization for production deployment or post-F0 product capabilities.
+Extraction Prototype F1 is implemented and verified locally on top of the Foundation F0 control plane. F1 provides real, deterministic extraction from digital English PDFs with exact page citations and mandatory human review. No cloud or production deployment was performed.
 
-The initial uncommitted Vite and bid-scoring prototype was assessed and adapted into the required Next.js and Tailwind stack. Vite, JavaScript-only conversion, and fake bid scoring are not part of the active application.
+The active application uses Next.js, TypeScript, and Tailwind CSS. Vite, a JavaScript-only conversion, and fake bid scoring are not part of the application.
 
-## Phase status
+## Foundation status
 
-| Phase | Status | Verified result |
+| Release | Status | Verified result |
 | --- | --- | --- |
-| 0. Repository assessment and decisions | Complete | Repository assessment, runtime pins, formatting, status record, and eight accepted ADRs. |
-| 1. Monorepo and local infrastructure | Complete | Next.js, ASP.NET Core, Python, PostgreSQL, MinIO, Temporal, and Docker Compose all reach healthy state without an OpenAI key. |
-| 2. Database and core domain | Complete | Seven forward-only migrations apply to empty PostgreSQL; application and audit roles are separate; 17 tenant-sensitive tables use RLS; audit mutation is rejected. |
-| 3. Authentication and API foundations | Complete | Owner bootstrap, login/logout/me, organization context, CSRF, owner/customer/internal authorization, OpenAPI, problem details, and correlation IDs are tested. |
-| 4. Upload and minimal analysis pipeline | Complete | Valid PDF upload is hashed and quarantined; Development scan bypass is forbidden outside Development; Temporal creates one manual-review task; requirements remain explicitly unimplemented. |
-| 5. Tool Gateway, policy, and approvals | Complete | Role permission, deterministic policy, idempotency, canonical payload hashes, revision, race, expiry, disabled adapters, and audit tests pass. |
-| 6. Four agents and workflows | Complete | Four versioned prompts and strict outputs have deterministic demos; support injection does not gain tools; invalid output fails rather than completes. |
-| 7. Owner Console and customer shell | Complete | Required owner and customer pages use live APIs; exact approval payload is visible; customer navigation contains no OS pages; draft-only state is prominent. |
-| 8. Engineering sandbox foundation | Complete | Generated Git worktree, containment, traversal, junction, secret, command, timeout, output, base-integrity, diff, and remote-action gates pass. |
-| 9. Quality, documentation, and release gate | Complete | Architecture, threat model, runbooks, evaluations, CI, dependency scanning, essential end-to-end script, and current verification record are present. |
+| F0 phases 0 through 9 | Complete | Local infrastructure, tenancy, authentication, approvals, four deterministic agents, audit, engineering sandbox, release controls, and end-to-end verification remain intact. |
+| F1.1 schema and architecture | Complete | Migration `0008_f1_document_extraction` adds extraction state and tenant-isolated page storage; ADR 0009 records the local deterministic design. |
+| F1.2 document extraction | Complete | Digital PDF text is read from MinIO, integrity checked, stored by page, hashed, classified, and reported with explicit `requires_ocr` and failure states. |
+| F1.3 requirements and citations | Complete | Strict mandatory and optional review candidates include category, confidence, requested evidence, file identity, page number, and exact quote. |
+| F1.4 workflow, API, and UI | Complete | Temporal runs extraction before manual review; typed customer and internal APIs expose F1 results; the analysis page presents metrics, document types, and citations. |
+| F1.5 evaluation and quality | Complete | A checked-in synthetic evaluation set measures mandatory recall, classification, citation pages, and quote equality. |
 
 ## Capability truth table
 
-| Capability | F0 state | Honest outward claim |
+| Capability | F1 state | Honest outward claim |
 | --- | --- | --- |
-| Customer and owner authentication | Implemented | Organization workspace and owner console are available. |
-| PDF intake | Implemented | English PDF files are validated, hashed, and stored in quarantine. |
-| RFP requirement extraction | Not implemented | Manual review is required; no requirements are generated. |
-| Four internal agents | Implemented in deterministic mode | Offline, structured, draft-only demonstrations are available. |
-| Live model mode | Opt-in adapter only | Not part of the verified default gate. |
-| Tool Gateway and policy | Implemented | All agent tools cross the deterministic boundary. |
-| Owner approvals | Implemented | Decisions are payload-bound, versioned, expiring, and audited. |
-| External communication and spending | Disabled | Approval does not execute an external effect in F0. |
-| Engineering code preparation | Fixture-only foundation | A documentation diff can be prepared in an isolated worktree. |
-| Remote Git and deployment | Disabled | No push, PR, merge, or deployment occurs. |
+| Customer and owner authentication | Implemented | Organization workspace and owner console are available locally. |
+| PDF intake | Implemented | English PDF files are validated, hashed, quarantined, and integrity checked before extraction. |
+| Digital PDF text extraction | Implemented prototype | Page-preserving local extraction works for digital text PDFs. |
+| OCR and complex table reconstruction | Not implemented | Scanned or blank-text pages are marked `requires_ocr`; no content is fabricated. |
+| Requirement detection | Implemented prototype | Deterministic mandatory and optional candidates are produced for human review. |
+| Source citations | Implemented | Every generated requirement includes an exact file, page, and quote citation. |
+| Company and evidence matching | Not implemented | No supplier capability or evidence conclusion is generated. |
+| Compliance and bid/no-bid scoring | Not implemented | No score, recommendation, or legal conclusion is generated. |
+| Four internal agents | Implemented in deterministic mode | Offline, structured, draft-only demonstrations remain available. |
+| Tool Gateway and owner approvals | Implemented | Policy and payload-bound approval controls remain active. |
+| External communication and spending | Disabled | Approval does not execute an external effect in F1. |
+| Remote Git and deployment | Disabled | No push, pull request, merge, cloud, or production deployment occurs. |
 
 ## Current verification record
 
-- Next.js/Tailwind: lint, TypeScript generation and check, three Vitest tests, and production build pass.
-- .NET: build passes with zero warnings; 25 integration and policy tests pass against disposable PostgreSQL.
+- Next.js and Tailwind CSS: lint, typecheck, four Vitest tests, and production build pass.
+- .NET: Release build passes with zero warnings; 27 integration, security, policy, extraction, and evaluation tests pass.
 - Python: Ruff and strict mypy pass; 12 pytest cases pass.
-- Contract surface: Development OpenAPI includes required customer, owner, demo, and internal routes.
-- Dependencies: npm production audit, NuGet transitive vulnerability scan, and pip-audit report no known vulnerabilities. The local Python package itself is skipped because it is not published to PyPI.
-- Compose: configuration validates; all six long-running services are healthy from pinned images.
-- Essential end to end: analysis reaches `requires_review`; four agent runs complete; engineering sandbox is recorded; audit chain is valid; draft-only and disabled-external controls remain active.
-- Engineering runtime: artifact, worktree, write, allowlisted command, and diff calls complete; remote Git call count is zero; base fixture remains clean.
+- F1 evaluation: five of five annotated mandatory requirements are recalled; all expected classifications, pages, and exact quotes match.
+- Dependencies: npm production audit and the NuGet direct plus transitive vulnerability scan report no known vulnerabilities.
+- Compose: configuration validates and all six long-running local services reach healthy state.
+- Essential end to end: extraction reaches `succeeded`; analysis reaches `requires_review`; two mandatory and cited requirements are produced; no fixture page requires OCR or fails.
+- F0 regression controls: four agent runs complete; the engineering sandbox is recorded; the audit chain is valid; draft-only and disabled-external controls remain active.
 
-## Explicit post-F0 boundary
+## Explicit post-F1 boundary
 
-No cloud deployment was performed. Real malware scanning, OCR, extraction, scoring, live-model qualification, external actions, billing, dedicated production sandbox infrastructure, and production operations require a new owner-approved phase.
+F1 is a controlled extraction prototype, not a production accuracy claim. OCR, handwriting recognition, robust table reconstruction, semantic or model-assisted extraction, company matching, evidence matching, correction capture, compliance scoring, bid/no-bid recommendations, legal conclusions, billing, live external actions, cloud deployment, and production operations require a separately approved phase.

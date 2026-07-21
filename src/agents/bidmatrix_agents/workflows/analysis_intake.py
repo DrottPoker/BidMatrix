@@ -6,6 +6,7 @@ from temporalio.common import RetryPolicy
 with workflow.unsafe.imports_passed_through():
     from bidmatrix_agents.activities.analysis_intake import (
         create_manual_review_task,
+        extract_analysis_documents,
         load_analysis_intake,
         mark_analysis_processing,
         mark_analysis_requires_review,
@@ -45,6 +46,14 @@ class AnalysisIntakeWorkflow:
             start_to_close_timeout=activity_timeout,
             retry_policy=retry_policy,
         )
+        extraction_status = await workflow.execute_activity(
+            extract_analysis_documents,
+            request,
+            start_to_close_timeout=timedelta(minutes=2),
+            retry_policy=retry_policy,
+        )
+        if extraction_status not in {"succeeded", "partial"}:
+            raise RuntimeError(f"Unexpected extraction status: {extraction_status}")
         review_task_id = await workflow.execute_activity(
             create_manual_review_task,
             request,

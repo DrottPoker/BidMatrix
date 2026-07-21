@@ -30,10 +30,53 @@ public sealed record AnalysisListResponse(IReadOnlyList<AnalysisResponse> Analys
 
 public sealed record AnalysisFileUploadResponse(AnalysisFileResponse File, bool Duplicate);
 
+public sealed record AnalysisDocumentResponse(
+    string AnalysisFileId,
+    string OriginalFileName,
+    string ExtractionStatus,
+    string? DocumentType,
+    int? PageCount,
+    string? ExtractionMethod,
+    string? FailureCode);
+
+public sealed record AnalysisCitationResponse(
+    string Id,
+    string AnalysisFileId,
+    string OriginalFileName,
+    int PageNumber,
+    string? SectionText,
+    string QuoteText);
+
+public sealed record AnalysisRequirementResponse(
+    string Id,
+    string? RequirementCode,
+    string RequirementText,
+    string NormalizedRequirement,
+    string Category,
+    bool Mandatory,
+    string? RequestedEvidence,
+    decimal Confidence,
+    string ReviewStatus,
+    IReadOnlyList<AnalysisCitationResponse> Citations);
+
+public sealed record AnalysisExtractionMetricsResponse(
+    int DocumentCount,
+    int PageCount,
+    int RequirementCount,
+    int MandatoryRequirementCount,
+    int CitedRequirementCount,
+    int FilesRequiringOcr,
+    int FailedFileCount);
+
 public sealed record AnalysisRequirementsResponse(
     string AnalysisId,
     string CapabilityStatus,
-    IReadOnlyList<object> Requirements,
+    string ExtractionStatus,
+    string? ExtractionVersion,
+    DateTimeOffset? CompletedAt,
+    IReadOnlyList<AnalysisDocumentResponse> Documents,
+    IReadOnlyList<AnalysisRequirementResponse> Requirements,
+    AnalysisExtractionMetricsResponse Metrics,
     string Message);
 
 public sealed record ClaimedEventResponse(

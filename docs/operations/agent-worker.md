@@ -2,7 +2,7 @@
 
 ## Modes
 
-`BIDMATRIX_AGENT_MODE=deterministic` is the default and requires no model credential. It loads versioned fixtures, validates strict Pydantic outputs, and is the only mode used by automated F0 gates.
+`BIDMATRIX_AGENT_MODE=deterministic` is the default and requires no model credential. It loads versioned fixtures, validates strict Pydantic outputs, and is the only mode used by automated release gates.
 
 `BIDMATRIX_AGENT_MODE=live` is opt-in. It requires `OPENAI_API_KEY` and explicit model values for Executive, Support, Product Analyst, and Engineering roles. Missing configuration prevents worker startup. Live mode still has no direct database access and no model-defined tools.
 
@@ -11,8 +11,9 @@
 1. The API commits a versioned outbox event with the domain change.
 2. The worker claims the event through authenticated internal API.
 3. The worker starts the role-specific Temporal workflow with a stable workflow ID.
-4. Activities prepare the agent run, validate structured output, materialize tool calls, and complete or fail the task.
-5. Retried tool calls reuse their effect idempotency keys.
+4. Analysis intake invokes the authenticated API extraction operation before creating its manual-review task.
+5. Agent activities prepare the run, validate structured output, materialize tool calls, and complete or fail the task.
+6. Retried extraction and tool calls reuse stable workflow or effect identities.
 
 ## Diagnosis
 

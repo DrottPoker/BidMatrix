@@ -15,4 +15,15 @@ public sealed class InMemoryObjectStorage : IObjectStorage
         objects[$"{request.Bucket}/{request.Key}"] = request.Content.ToArray();
         return Task.CompletedTask;
     }
+
+    public Task<ReadOnlyMemory<byte>> GetAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return objects.TryGetValue($"{bucket}/{key}", out var content)
+            ? Task.FromResult<ReadOnlyMemory<byte>>(content)
+            : throw new FileNotFoundException("The requested test object was not found.", key);
+    }
 }

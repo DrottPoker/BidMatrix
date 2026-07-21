@@ -2,7 +2,7 @@
 
 This Python 3.14 package hosts the Temporal worker, versioned prompts, strict Pydantic contracts, deterministic fixture models, optional OpenAI Agents SDK adapter, and authenticated internal API client.
 
-Deterministic mode is the F0 default and requires no OpenAI key. It implements offline demonstrations for Executive, Support, Product Analyst, and Engineering roles. Every proposed action is checked against the active role inventory and materialized through the ASP.NET Core Tool Gateway.
+Deterministic mode is the local default and requires no OpenAI key. It implements offline demonstrations for Executive, Support, Product Analyst, and Engineering roles. The same worker durably orchestrates F1 extraction through the authenticated ASP.NET Core API. It never reads PostgreSQL or MinIO directly. Every proposed agent action is checked against the active role inventory and materialized through the Tool Gateway.
 
 ```powershell
 uv sync --project src/agents --locked

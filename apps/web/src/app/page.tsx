@@ -21,7 +21,7 @@ const principles = [
   {
     title: "Sourced, not invented",
     description:
-      "Future analysis must point back to document evidence. F0 never fabricates extracted requirements.",
+      "F1 requirements point back to exact files and pages. Missing digital text is reported instead of fabricated.",
     icon: FileLock2,
   },
   {
@@ -74,12 +74,12 @@ export default function Home() {
               Roadmap
             </a>
             <a className="transition hover:text-foreground" href="#scope">
-              F0 boundary
+              F1 boundary
             </a>
           </nav>
           <span className="inline-flex items-center gap-2 rounded-full bg-zinc-100 px-3 py-1.5 text-xs font-semibold text-zinc-700 ring-1 ring-inset ring-zinc-200">
             <span className="size-1.5 rounded-full bg-amber-500" />
-            Draft-only foundation
+            F1 extraction prototype
           </span>
         </div>
       </header>
@@ -90,15 +90,15 @@ export default function Home() {
           <div>
             <div className="inline-flex items-center gap-2 rounded-full bg-brand/8 px-3 py-1.5 text-xs font-bold uppercase tracking-[0.18em] text-brand ring-1 ring-inset ring-brand/15">
               <Blocks aria-hidden="true" size={14} />
-              Foundation release F0
+              Release F1
             </div>
             <h1 className="mt-7 max-w-3xl text-5xl leading-[0.98] font-semibold tracking-[-0.045em] text-foreground sm:text-6xl lg:text-7xl">
               Trustworthy bid intelligence starts with control.
             </h1>
             <p className="mt-7 max-w-2xl text-lg leading-8 text-muted sm:text-xl">
               BidMatrix is becoming a sourced, reviewable workspace for RFP decision
-              support. This foundation establishes the architecture, security boundaries,
-              and durable workflows before real extraction is introduced.
+              support. F1 extracts digital PDF text, classifies documents, and presents
+              requirement candidates with page citations for mandatory human review.
             </p>
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
               <a
@@ -112,7 +112,7 @@ export default function Home() {
                 href="#scope"
                 className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border bg-surface px-5 text-sm font-semibold text-foreground transition hover:border-brand/30 hover:bg-white"
               >
-                See the F0 boundary
+                See the F1 boundary
                 <ArrowDownRight aria-hidden="true" size={17} />
               </a>
             </div>
@@ -124,7 +124,7 @@ export default function Home() {
                 <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">
                   System snapshot
                 </p>
-                <h2 className="mt-1 text-lg font-semibold">Foundation F0 runtime</h2>
+                <h2 className="mt-1 text-lg font-semibold">F1 extraction runtime</h2>
               </div>
               <CloudCog aria-hidden="true" className="text-accent" size={28} />
             </div>
@@ -263,19 +263,20 @@ export default function Home() {
                 Honest capability boundary
               </div>
               <h2 className="mt-5 max-w-3xl text-3xl font-semibold tracking-[-0.03em] sm:text-4xl">
-                F0 proves the control plane before it promises analysis.
+                F1 adds sourced extraction without weakening the control plane.
               </h2>
               <p className="mt-5 max-w-2xl leading-7 text-white/68">
-                PDF quarantine, analysis state, manual review, agent contracts, approvals,
-                and auditability belong in F0. Real document extraction comes later.
+                Digital PDF text, page preservation, document classification, strict
+                requirement records, and citations now run through the durable workflow.
+                Every result remains pending human review.
               </p>
             </div>
             <div className="rounded-2xl bg-white/7 p-5 ring-1 ring-inset ring-white/10">
               <p className="text-xs font-bold uppercase tracking-[0.16em] text-white/50">
-                Explicitly unavailable in F0
+                Explicitly unavailable in F1
               </p>
               <p className="mt-3 text-sm leading-6 text-white/80">
-                OCR, requirement extraction, compliance matching, bid/no-bid scoring,
+                OCR, company matching, compliance scoring, bid/no-bid recommendations,
                 outbound actions, billing, and production deployment.
               </p>
             </div>
@@ -285,8 +286,8 @@ export default function Home() {
 
       <footer className="border-t bg-surface">
         <div className="mx-auto flex max-w-7xl flex-col gap-3 px-5 py-7 text-xs text-muted sm:flex-row sm:items-center sm:justify-between sm:px-8">
-          <p>BidMatrix Foundation F0</p>
-          <p>Controlled, reviewable, and cloud-portable by design.</p>
+          <p>BidMatrix Extraction Prototype F1</p>
+          <p>Local, sourced, controlled, and reviewable by design.</p>
         </div>
       </footer>
     </main>

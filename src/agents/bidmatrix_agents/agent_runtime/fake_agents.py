@@ -199,7 +199,7 @@ def run_product(input_data: ProductAnalystInput) -> ProductAnalystOutput:
 def run_engineering(input_data: EngineeringInput) -> EngineeringOutput:
     return EngineeringOutput(
         status="completed",
-        summary="Prepared a documentation-only change in the isolated F0 worktree.",
+        summary="Prepared a documentation-only change in the isolated F1 worktree.",
         findings=["The fixture uses an allowlisted Git validation command and no remote action."],
         proposed_actions=[
             ProposedAction(
@@ -213,7 +213,7 @@ def run_engineering(input_data: EngineeringInput) -> EngineeringOutput:
                     "path": "README.md",
                     "content": (
                         "# BidMatrix engineering fixture\n\n"
-                        "This deterministic F0 change was prepared in an isolated worktree.\n\n"
+                        "This deterministic F1 change was prepared in an isolated worktree.\n\n"
                         "Remote Git operations remain disabled.\n"
                     ),
                 },
@@ -226,7 +226,7 @@ def run_engineering(input_data: EngineeringInput) -> EngineeringOutput:
             ),
             ProposedAction(
                 tool_key="repo.createDiffArtifact",
-                arguments={"title": "Engineering F0 sandbox diff"},
+                arguments={"title": "Engineering F1 sandbox diff"},
                 rationale="Persist the exact diff for owner review.",
             ),
         ],

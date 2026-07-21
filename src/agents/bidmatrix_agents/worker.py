@@ -14,6 +14,7 @@ from bidmatrix_agents.activities.agent_task import (
 )
 from bidmatrix_agents.activities.analysis_intake import (
     create_manual_review_task,
+    extract_analysis_documents,
     load_analysis_intake,
     mark_analysis_processing,
     mark_analysis_requires_review,
@@ -108,6 +109,7 @@ async def run() -> None:
             activities=[
                 load_analysis_intake,
                 mark_analysis_processing,
+                extract_analysis_documents,
                 create_manual_review_task,
                 mark_analysis_requires_review,
                 expire_approval,

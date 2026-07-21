@@ -227,7 +227,7 @@ public static class InternalFoundationEndpoints
 
             throw new ToolGatewayException(
                 "unsupported_agent_run_status",
-                "The generic F0 agent-run update accepts only completed or failed.",
+                "The generic baseline agent-run update accepts only completed or failed.",
                 400);
         }
         catch (ToolGatewayException exception)

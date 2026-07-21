@@ -6,7 +6,7 @@ namespace BidMatrix.Api.IntegrationTests;
 public sealed class ContractSurfaceTests(DatabaseFixture database)
 {
     [Fact]
-    public async Task DevelopmentOpenApiContainsTheRequiredF0Surface()
+    public async Task DevelopmentOpenApiContainsTheRequiredReleaseSurface()
     {
         using var factory = new BidMatrixApiFactory(database);
         using var client = factory.CreateClient();
@@ -17,10 +17,10 @@ public sealed class ContractSurfaceTests(DatabaseFixture database)
 
         foreach (var (method, path) in RequiredOperations)
         {
-            Assert.True(paths.TryGetProperty(path, out var pathItem), $"OpenAPI is missing required F0 path {path}.");
+            Assert.True(paths.TryGetProperty(path, out var pathItem), $"OpenAPI is missing required release path {path}.");
             Assert.True(
                 pathItem.TryGetProperty(method, out _),
-                $"OpenAPI is missing required F0 operation {method.ToUpperInvariant()} {path}.");
+                $"OpenAPI is missing required release operation {method.ToUpperInvariant()} {path}.");
         }
     }
 
@@ -81,6 +81,7 @@ public sealed class ContractSurfaceTests(DatabaseFixture database)
         ("get", "/internal/v1/events/claim"),
         ("post", "/internal/v1/events/{eventId}/ack"),
         ("post", "/internal/v1/events/{eventId}/fail"),
+        ("post", "/internal/v1/analyses/{analysisId}/intake/extract"),
         ("get", "/internal/v1/tasks/{taskId}"),
         ("post", "/internal/v1/tasks"),
         ("patch", "/internal/v1/tasks/{taskId}/status"),

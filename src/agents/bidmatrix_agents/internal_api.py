@@ -50,6 +50,13 @@ class ManualReviewTaskResponse(BaseModel):
     task_id: str = Field(alias="taskId")
 
 
+class AnalysisExtractionResponse(BaseModel):
+    model_config = ConfigDict(populate_by_name=True)
+
+    analysis_id: str = Field(alias="analysisId")
+    extraction_status: str = Field(alias="extractionStatus")
+
+
 class ApprovalStateResponse(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
@@ -148,6 +155,10 @@ class InternalApiClient:
 
     async def mark_processing(self, request: AnalysisIntakeInput) -> None:
         await self._post_intake(request, "processing")
+
+    async def extract_analysis(self, request: AnalysisIntakeInput) -> str:
+        response = await self._post_intake(request, "extract")
+        return AnalysisExtractionResponse.model_validate(response.json()).extraction_status
 
     async def create_manual_review_task(self, request: AnalysisIntakeInput) -> str:
         response = await self._post_intake(request, "manual-review-task")

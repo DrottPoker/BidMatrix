@@ -21,4 +21,19 @@ public sealed class S3ObjectStorage(IAmazonS3 client) : IObjectStorage
 
         await client.PutObjectAsync(putRequest, cancellationToken);
     }
+
+    public async Task<ReadOnlyMemory<byte>> GetAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        using var response = await client.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = bucket,
+            Key = key,
+        }, cancellationToken);
+        await using var content = new MemoryStream();
+        await response.ResponseStream.CopyToAsync(content, cancellationToken);
+        return content.ToArray();
+    }
 }

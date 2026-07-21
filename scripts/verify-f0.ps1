@@ -71,7 +71,7 @@ try {
     $script:csrfHeaderName = $csrf.headerName
     $script:csrfToken = $csrf.token
 
-    $analysis = Send-ApiJson "POST" "/v1/analyses" @{ title = "F0 essential end-to-end verification" } "f0-e2e-analysis-$([guid]::NewGuid())"
+    $analysis = Send-ApiJson "POST" "/v1/analyses" @{ title = "F1 essential end-to-end verification" } "f1-e2e-analysis-$([guid]::NewGuid())"
     $fixturePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "..\tests\fixtures\rfp\synthetic-it-rfp.pdf"))
     $multipart = [System.Net.Http.MultipartFormDataContent]::new()
     $fileContent = [System.Net.Http.ByteArrayContent]::new([IO.File]::ReadAllBytes($fixturePath))
@@ -93,8 +93,8 @@ try {
     Send-ApiJson "POST" "/v1/analyses/$($analysis.id)/submit" $null | Out-Null
 
     $requirements = Get-ApiJson "/v1/analyses/$($analysis.id)/requirements"
-    if ($requirements.capabilityStatus -ne "notImplemented" -or $requirements.requirements.Count -ne 0) {
-        throw "The requirements boundary is not honest."
+    if ($requirements.capabilityStatus -ne "notReady" -or $requirements.requirements.Count -ne 0) {
+        throw "Requirements were exposed before the durable extraction workflow completed."
     }
 
     $demoTasks = @()
@@ -124,6 +124,19 @@ try {
         throw "The analysis did not reach requires_review."
     }
 
+    $requirements = Get-ApiJson "/v1/analyses/$($analysis.id)/requirements"
+    if ($requirements.capabilityStatus -ne "requiresReview" -or $requirements.extractionStatus -ne "succeeded") {
+        throw "F1 extraction did not complete in a manually reviewed state."
+    }
+    if ($requirements.metrics.requirementCount -lt 2 -or
+        $requirements.metrics.mandatoryRequirementCount -lt 2 -or
+        $requirements.metrics.citedRequirementCount -ne $requirements.metrics.requirementCount) {
+        throw "F1 extraction did not return the expected cited mandatory requirements."
+    }
+    if ($requirements.metrics.filesRequiringOcr -ne 0 -or $requirements.metrics.failedFileCount -ne 0) {
+        throw "The digital F1 fixture unexpectedly requires OCR or contains failed files."
+    }
+
     $dashboard = Get-ApiJson "/owner/v1/dashboard"
     if (-not $dashboard.draftOnly -or -not $dashboard.externalActionsDisabled -or -not $dashboard.auditChainValid) {
         throw "The F0 control or audit state is unsafe."
@@ -138,6 +151,10 @@ try {
     [pscustomobject]@{
         analysisId = $analysis.id
         analysisStatus = $analysisState.status
+        extractionStatus = $requirements.extractionStatus
+        requirementsExtracted = $requirements.metrics.requirementCount
+        mandatoryRequirements = $requirements.metrics.mandatoryRequirementCount
+        citedRequirements = $requirements.metrics.citedRequirementCount
         agentRunsCompleted = $matchingRuns.Count
         engineeringSandboxRecorded = $true
         auditChainValid = $dashboard.auditChainValid

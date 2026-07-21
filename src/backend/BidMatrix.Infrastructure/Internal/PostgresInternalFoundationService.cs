@@ -142,7 +142,7 @@ public sealed class PostgresInternalFoundationService(
         {
             status = "noApprovedMatches",
             matches = Array.Empty<object>(),
-            note = "No approved knowledge documents are indexed in F0.",
+            note = "No approved knowledge documents are indexed in F1.",
         }));
     }
 

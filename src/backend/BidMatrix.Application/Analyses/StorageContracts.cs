@@ -10,6 +10,11 @@ public sealed record ObjectWriteRequest(
 public interface IObjectStorage
 {
     Task PutAsync(ObjectWriteRequest request, CancellationToken cancellationToken = default);
+
+    Task<ReadOnlyMemory<byte>> GetAsync(
+        string bucket,
+        string key,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed record FileScanResult(string Status, string? Detail);

@@ -54,6 +54,8 @@ public static class AnalysisEndpoints
             .WithName("GetAnalysisIntake");
         internalRoutes.MapPost("/analyses/{analysisId:guid}/intake/processing", MarkProcessingAsync)
             .WithName("MarkAnalysisProcessing");
+        internalRoutes.MapPost("/analyses/{analysisId:guid}/intake/extract", ExtractAnalysisAsync)
+            .WithName("ExtractAnalysisDocuments");
         internalRoutes.MapPost("/analyses/{analysisId:guid}/intake/manual-review-task", CreateManualReviewTaskAsync)
             .WithName("CreateAnalysisManualReviewTask");
         internalRoutes.MapPost("/analyses/{analysisId:guid}/intake/requires-review", MarkRequiresReviewAsync)
@@ -200,17 +202,13 @@ public static class AnalysisEndpoints
     private static async Task<IResult> GetRequirementsAsync(
         Guid analysisId,
         ClaimsPrincipal principal,
-        IAnalysisService service,
+        IAnalysisExtractionService service,
         CancellationToken cancellationToken)
     {
-        var analysis = await service.GetAsync(GetOrganizationId(principal), analysisId, cancellationToken);
-        return analysis is null
+        var extraction = await service.GetAsync(GetOrganizationId(principal), analysisId, cancellationToken);
+        return extraction is null
             ? Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Analysis not found")
-            : Results.Ok(new AnalysisRequirementsResponse(
-                analysisId.ToString(),
-                "notImplemented",
-                [],
-                "Automated requirement extraction is not available in Foundation Release F0."));
+            : Results.Ok(ToResponse(extraction));
     }
 
     private static async Task<IResult> ClaimEventsAsync(
@@ -315,6 +313,26 @@ public static class AnalysisEndpoints
         }
     }
 
+    private static async Task<IResult> ExtractAnalysisAsync(
+        Guid analysisId,
+        [FromBody] AnalysisIntakeRequest request,
+        IAnalysisExtractionService service,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var extraction = await service.ExtractAsync(new ExtractAnalysisCommand(
+                ParseOrganizationId(request.OrganizationId),
+                analysisId,
+                request.CorrelationId), cancellationToken);
+            return Results.Ok(ToResponse(extraction));
+        }
+        catch (AnalysisOperationException exception)
+        {
+            return Problem(exception);
+        }
+    }
+
     private static async Task<IResult> MarkRequiresReviewAsync(
         Guid analysisId,
         [FromBody] AnalysisIntakeRequest request,
@@ -388,4 +406,61 @@ public static class AnalysisEndpoints
         file.ScanStatus,
         file.RetentionUntil,
         file.CreatedAt);
+
+    private static AnalysisRequirementsResponse ToResponse(AnalysisExtractionSnapshot extraction)
+    {
+        var capabilityStatus = extraction.ExtractionStatus is "succeeded" or "partial"
+            ? "requiresReview"
+            : extraction.ExtractionStatus == "failed"
+                ? "failed"
+                : "notReady";
+        var message = extraction.ExtractionStatus switch
+        {
+            "succeeded" => "Digital PDF extraction completed. Every requirement and citation must be manually reviewed.",
+            "partial" => "Extraction completed with OCR or file failures. Missing content is explicit and manual review is required.",
+            "failed" => "Document extraction failed. No unverified requirements were fabricated.",
+            "processing" => "Digital PDF extraction is processing.",
+            _ => "Digital PDF extraction has not started.",
+        };
+        return new AnalysisRequirementsResponse(
+            extraction.AnalysisId.ToString(),
+            capabilityStatus,
+            extraction.ExtractionStatus,
+            extraction.ExtractionVersion,
+            extraction.CompletedAt,
+            extraction.Documents.Select(document => new AnalysisDocumentResponse(
+                document.AnalysisFileId.ToString(),
+                document.OriginalFileName,
+                document.ExtractionStatus,
+                document.DocumentType,
+                document.PageCount,
+                document.ExtractionMethod,
+                document.FailureCode)).ToArray(),
+            extraction.Requirements.Select(requirement => new AnalysisRequirementResponse(
+                requirement.Id.ToString(),
+                requirement.RequirementCode,
+                requirement.RequirementText,
+                requirement.NormalizedRequirement,
+                requirement.Category,
+                requirement.Mandatory,
+                requirement.RequestedEvidence,
+                requirement.Confidence,
+                requirement.ReviewStatus,
+                requirement.Citations.Select(citation => new AnalysisCitationResponse(
+                    citation.Id.ToString(),
+                    citation.AnalysisFileId.ToString(),
+                    citation.OriginalFileName,
+                    citation.PageNumber,
+                    citation.SectionText,
+                    citation.QuoteText)).ToArray())).ToArray(),
+            new AnalysisExtractionMetricsResponse(
+                extraction.Metrics.DocumentCount,
+                extraction.Metrics.PageCount,
+                extraction.Metrics.RequirementCount,
+                extraction.Metrics.MandatoryRequirementCount,
+                extraction.Metrics.CitedRequirementCount,
+                extraction.Metrics.FilesRequiringOcr,
+                extraction.Metrics.FailedFileCount),
+            message);
+    }
 }

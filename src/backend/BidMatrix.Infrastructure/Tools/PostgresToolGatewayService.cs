@@ -162,7 +162,7 @@ public sealed class PostgresToolGatewayService(
                 output = JsonSerializer.SerializeToElement(new
                 {
                     status = "disabled",
-                    reason = "The F0 adapter is technically disabled and no external action occurred.",
+                    reason = "The adapter is technically disabled and no external action occurred in F1.",
                 });
                 await CompleteToolCallAsync(
                     connection,
@@ -227,12 +227,12 @@ public sealed class PostgresToolGatewayService(
             }), null),
             "context.getProductFacts" => new ToolExecution(JsonSerializer.SerializeToElement(new
             {
-                release = "F0",
+                release = "F1",
                 facts = new[]
                 {
-                    "BidMatrix accepts English PDF files into quarantine.",
-                    "Automated requirement extraction is not implemented in F0.",
-                    "External actions are disabled in F0.",
+                    "BidMatrix extracts text from digital English PDF files and preserves page identity.",
+                    "F1 produces sourced requirement candidates that always require human review.",
+                    "OCR, scoring, legal conclusions, and external actions are unavailable in F1.",
                 },
             }), null),
             "context.getTask" => new ToolExecution(
@@ -248,7 +248,7 @@ public sealed class PostgresToolGatewayService(
             {
                 status = "noApprovedMatches",
                 matches = Array.Empty<object>(),
-                note = "The F0 knowledge index contains no approved searchable documents.",
+                note = "The F1 knowledge index contains no approved searchable documents.",
             }), null),
             "artifact.read" => new ToolExecution(
                 await ReadArtifactAsync(connection, transaction, request.Arguments, cancellationToken),
@@ -325,7 +325,7 @@ public sealed class PostgresToolGatewayService(
                 cancellationToken),
             _ => throw new ToolGatewayException(
                 "tool_adapter_unavailable",
-                $"The {request.ToolKey} adapter is not available in this F0 runtime.",
+                $"The {request.ToolKey} adapter is not available in this F1 runtime.",
                 409),
         };
     }

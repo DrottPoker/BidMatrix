@@ -1,8 +1,8 @@
 # BidMatrix
 
-BidMatrix Foundation Release F0 is a controlled, local-first foundation for sourced and reviewable RFP intake plus an internal AI operating system. It uses Next.js and Tailwind CSS, ASP.NET Core, PostgreSQL, MinIO, Temporal, and a Python agent worker.
+BidMatrix Extraction Prototype F1 is a controlled, local-first system for sourced and reviewable RFP intake plus an internal AI operating system. It uses Next.js and Tailwind CSS, ASP.NET Core, PostgreSQL, MinIO, Temporal, and a Python agent worker.
 
-F0 is intentionally draft-only. It does not perform OCR, requirement extraction, compliance matching, bid scoring, outbound communication, remote Git actions, billing, or production deployment.
+F1 extracts text from digital English PDFs, preserves pages, classifies procurement documents, and produces strict requirement candidates with exact source citations. Every result requires human review. OCR, company matching, compliance scoring, bid/no-bid recommendations, outbound communication, remote Git actions, billing, and production deployment remain unavailable.
 
 ## Quick start
 
@@ -11,7 +11,7 @@ Prerequisite: Docker Desktop with Compose v2.
 ```powershell
 Copy-Item .env.example .env
 docker compose up --detach --build --wait
-.\scripts\verify-f0.ps1
+.\scripts\verify-f1.ps1
 ```
 
 Open:
@@ -64,10 +64,11 @@ docker compose --env-file .env.example config --quiet
 
 The PostgreSQL integration tests require a local initialized PostgreSQL instance with the roles from `infra/postgres/init`. Starting the Compose `postgres` service provides that baseline.
 
-## Demonstrable F0 flows
+## Demonstrable F1 flows
 
 - Sign in as the owner and inspect live tasks, approvals, agents, runs, audit, goals, analyses, and system controls.
-- Create an analysis, upload the synthetic PDF fixture into tenant-scoped quarantine, and submit it for manual review.
+- Create an analysis, upload the synthetic PDF fixture, and submit it through durable page extraction and manual review.
+- Inspect document classification, mandatory and optional requirements, confidence values, and exact file/page citations.
 - Run deterministic offline demonstrations for Executive, Support, Product Analyst, and Engineering agents.
 - Review every agent tool call at the mandatory Tool Gateway boundary.
 - Create, reject, approve, expire, cancel, or revise payload-bound approvals while external adapters remain disabled.
@@ -80,11 +81,11 @@ The PostgreSQL integration tests require a local initialized PostgreSQL instance
 - `src/agents`: Python structured agents and Temporal worker.
 - `infra`: pinned application containers and PostgreSQL initialization.
 - `tests/fixtures`: deterministic PDF, agent, and engineering repositories.
-- `scripts/verify-f0.ps1`: essential running-stack end-to-end verification.
+- `scripts/verify-f1.ps1`: essential F1 running-stack end-to-end verification.
 - `docs/architecture`: system topology and trust boundaries.
 - `docs/operations`: setup, migration, worker, incident, and release runbooks.
 - `docs/security`: F0 threat model and engineering-sandbox controls.
 - `docs/evaluations`: deterministic agent evaluation contract.
 - `BIDMATRIX_AI_COMPANY_MASTER_PLAN.md`: authoritative specification.
 
-Start with `docs/implementation-status.md` for the verified release state and `docs/product/f0-capability-boundaries.md` before changing customer-visible behavior.
+Start with `docs/implementation-status.md` for the verified release state and `docs/product/f1-capability-boundaries.md` before changing customer-visible behavior.
