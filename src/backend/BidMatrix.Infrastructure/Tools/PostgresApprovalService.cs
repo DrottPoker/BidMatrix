@@ -42,7 +42,7 @@ public sealed class PostgresApprovalService(
             cancellationToken);
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = ApprovalSelect + """
+        command.CommandText = ApprovalSelect + "\n" + """
             where ($1::uuid is null or approval.organization_id = $1)
               and ($2::text is null or approval.status = $2)
             order by approval.requested_at desc

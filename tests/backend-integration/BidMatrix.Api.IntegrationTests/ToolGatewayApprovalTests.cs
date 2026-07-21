@@ -92,6 +92,12 @@ public sealed class ToolGatewayApprovalTests(DatabaseFixture database)
         await LoginOwnerAsync(ownerClient);
         await AddCsrfTokenAsync(ownerClient);
 
+        using var listResponse = await ownerClient.GetAsync("/owner/v1/approvals");
+        listResponse.EnsureSuccessStatusCode();
+        var approvalList = await listResponse.Content.ReadFromJsonAsync<ApprovalListResponse>()
+            ?? throw new InvalidOperationException("Approval list response was empty.");
+        Assert.Contains(approvalList.Approvals, item => item.Id == external.ApprovalId);
+
         var approval = await GetApprovalAsync(ownerClient, external.ApprovalId!);
         Assert.Equal("pending", approval.Status);
         Assert.False(approval.TechnicallyEnabled);
