@@ -2,7 +2,7 @@
 
   <ItemGroup>
     <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.10" />
-    <PackageReference Include="Microsoft.OpenApi" Version="2.11.0" />
+    <PackageReference Include="Microsoft.OpenApi" Version="3.9.0" />
     <ProjectReference Include="..\BidMatrix.Application\BidMatrix.Application.csproj" />
     <ProjectReference Include="..\BidMatrix.Contracts\BidMatrix.Contracts.csproj" />
     <ProjectReference Include="..\BidMatrix.Infrastructure\BidMatrix.Infrastructure.csproj" />
