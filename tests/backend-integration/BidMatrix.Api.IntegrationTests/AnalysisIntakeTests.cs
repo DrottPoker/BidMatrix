@@ -82,6 +82,9 @@ public sealed class AnalysisIntakeTests(DatabaseFixture database)
         Assert.Equal(3, extraction.Metrics.RequirementCount);
         Assert.Equal(2, extraction.Metrics.MandatoryRequirementCount);
         Assert.Equal(3, extraction.Metrics.CitedRequirementCount);
+        Assert.Equal(1, extraction.Metrics.KeyDateCount);
+        Assert.Equal(1, extraction.Metrics.RequestedDocumentCount);
+        Assert.Equal(1, extraction.Metrics.EvaluationCriterionCount);
         Assert.Equal("request_for_proposal", Assert.Single(extraction.Documents).DocumentType);
         Assert.All(extraction.Requirements, requirement => Assert.NotEmpty(requirement.Citations));
 
@@ -109,16 +112,48 @@ public sealed class AnalysisIntakeTests(DatabaseFixture database)
         finalRequirementsResponse.EnsureSuccessStatusCode();
         var finalRequirements = await finalRequirementsResponse.Content.ReadFromJsonAsync<AnalysisRequirementsResponse>();
         Assert.NotNull(finalRequirements);
-        Assert.Equal("requiresReview", finalRequirements.CapabilityStatus);
-        Assert.Equal(3, finalRequirements.Requirements.Count);
-        Assert.Contains(finalRequirements.Requirements, requirement =>
+        Assert.Equal("qualityReview", finalRequirements.CapabilityStatus);
+        Assert.Empty(finalRequirements.Requirements);
+        Assert.Empty(finalRequirements.KeyDates);
+
+        using var ownerReviewResponse = await customerClient.GetAsync($"/owner/v1/analyses/{created.Id}/review");
+        ownerReviewResponse.EnsureSuccessStatusCode();
+        var ownerReview = await ownerReviewResponse.Content.ReadFromJsonAsync<AnalysisRequirementsResponse>();
+        Assert.NotNull(ownerReview);
+        Assert.Equal(3, ownerReview.Requirements.Count);
+        Assert.Single(ownerReview.KeyDates);
+        Assert.Single(ownerReview.RequestedDocuments);
+        Assert.Single(ownerReview.EvaluationCriteria);
+        Assert.Contains(ownerReview.Requirements, requirement =>
             requirement.Mandatory &&
             requirement.Citations.Any(citation => citation.PageNumber == 2));
+
+        using var publishResponse = await customerClient.PostAsJsonAsync(
+            $"/owner/v1/analyses/{created.Id}/publish",
+            new PublishAnalysisRequest(
+                "All extracted content and exact source citations were checked for customer delivery.",
+                "PUBLISH REVIEWED ANALYSIS"));
+        publishResponse.EnsureSuccessStatusCode();
+        var published = await publishResponse.Content.ReadFromJsonAsync<AnalysisRequirementsResponse>();
+        Assert.NotNull(published);
+        Assert.True(published.Publication.IsPublished);
+        Assert.Equal(0, published.Metrics.PendingReviewCount);
+
+        using var customerResultResponse = await customerClient.GetAsync($"/v1/analyses/{created.Id}/requirements");
+        customerResultResponse.EnsureSuccessStatusCode();
+        var customerResult = await customerResultResponse.Content.ReadFromJsonAsync<AnalysisRequirementsResponse>();
+        Assert.NotNull(customerResult);
+        Assert.Equal("ready", customerResult.CapabilityStatus);
+        Assert.Equal(3, customerResult.Requirements.Count);
+        Assert.Single(customerResult.KeyDates);
+        Assert.Single(customerResult.RequestedDocuments);
+        Assert.Single(customerResult.EvaluationCriteria);
 
         Assert.Equal(1, await CountReviewTasksAsync(Guid.Parse(created.Id)));
         Assert.Equal(1, await CountSubmittedEventsAsync(Guid.Parse(created.Id)));
         Assert.Equal(2, await CountAnalysisPagesAsync(Guid.Parse(created.Id)));
         Assert.Equal(3, await CountRequirementsAsync(Guid.Parse(created.Id)));
+        Assert.Equal(3, await CountFindingsAsync(Guid.Parse(created.Id)));
 
         Assert.Equal(
             HttpStatusCode.NoContent,
@@ -252,12 +287,14 @@ public sealed class AnalysisIntakeTests(DatabaseFixture database)
         AddLines(firstPage, font, [
             "REQUEST FOR PROPOSAL",
             "REQ-001: The supplier must provide 24/7 managed support.",
+            "Proposal submission deadline: September 30 2026.",
             "Background information is not a requirement.",
         ]);
         var secondPage = builder.AddPage(PageSize.A4);
         AddLines(secondPage, font, [
             "SECURITY REQUIREMENTS",
             "SEC-002: Proposals shall include a valid ISO 27001 certificate.",
+            "Technical solution evaluation weight: 60%.",
             "Preferred providers should describe optional training.",
         ]);
         return builder.Build();
@@ -342,12 +379,16 @@ public sealed class AnalysisIntakeTests(DatabaseFixture database)
     private async Task<int> CountRequirementsAsync(Guid analysisId) =>
         await CountAnalysisRowsAsync("analysis_requirements", analysisId);
 
+    private async Task<int> CountFindingsAsync(Guid analysisId) =>
+        await CountAnalysisRowsAsync("analysis_findings", analysisId);
+
     private async Task<int> CountAnalysisRowsAsync(string tableName, Guid analysisId)
     {
         var allowedTable = tableName switch
         {
             "analysis_pages" => "analysis_pages",
             "analysis_requirements" => "analysis_requirements",
+            "analysis_findings" => "analysis_findings",
             _ => throw new ArgumentOutOfRangeException(nameof(tableName)),
         };
         await using var connection = await database.MigrationDataSource.OpenConnectionAsync();

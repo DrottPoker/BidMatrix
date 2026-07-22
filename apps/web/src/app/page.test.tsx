@@ -2,18 +2,13 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import Home from "./page";
 
-describe("foundation home page", () => {
-  it("presents the sourced F1 scope without claiming later capabilities", () => {
+describe("customer landing page", () => {
+  it("presents the focused F2 product without making the customer decision", () => {
     render(<Home />);
 
-    expect(
-      screen.getByRole("heading", {
-        level: 1,
-        name: "Trustworthy bid intelligence starts with control.",
-      }),
-    ).toBeInTheDocument();
-    expect(screen.getByText("F1 extraction prototype")).toBeInTheDocument();
-    expect(screen.getByText("Explicitly unavailable in F1")).toBeInTheDocument();
-    expect(screen.getByText(/bid\/no-bid recommendations/i)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Understand the RFP before you commit." })).toBeInTheDocument();
+    expect(screen.getByText(/Your company makes the decision/i)).toBeInTheDocument();
+    expect(screen.getByText("Quality reviewed")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Requested documents" })).toBeInTheDocument();
   });
 });

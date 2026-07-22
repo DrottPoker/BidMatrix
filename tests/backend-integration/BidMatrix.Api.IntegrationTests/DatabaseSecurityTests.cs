@@ -10,16 +10,16 @@ public sealed class DatabaseSecurityTests(DatabaseFixture database)
     {
         await using var connection = await database.MigrationDataSource.OpenConnectionAsync();
 
-        Assert.Equal(8, await CountAsync(connection, "select count(*) from schema_migrations"));
+        Assert.Equal(9, await CountAsync(connection, "select count(*) from schema_migrations"));
         Assert.Equal(4, await CountAsync(connection, "select count(*) from agent_definitions"));
         Assert.Equal(4, await CountAsync(connection, "select count(*) from agent_versions"));
         Assert.Equal(6, await CountAsync(connection, "select count(*) from system_controls"));
         Assert.Equal(1, await CountAsync(
             connection,
             "select count(*) from user_platform_roles where role = 'platform_owner'"));
-        Assert.Equal(18, await CountAsync(
+        Assert.Equal(19, await CountAsync(
             connection,
-            "select count(*) from pg_class where relrowsecurity and relname in ('organizations','organization_memberships','analyses','analysis_files','analysis_pages','analysis_requirements','analysis_citations','company_profiles','evidence_items','requirement_evidence_matches','tasks','task_dependencies','artifacts','tool_calls','approvals','workflow_runs','agent_runs','engineering_sandboxes')"));
+            "select count(*) from pg_class where relrowsecurity and relname in ('organizations','organization_memberships','analyses','analysis_files','analysis_pages','analysis_requirements','analysis_citations','analysis_findings','company_profiles','evidence_items','requirement_evidence_matches','tasks','task_dependencies','artifacts','tool_calls','approvals','workflow_runs','agent_runs','engineering_sandboxes')"));
     }
 
     [Fact]

@@ -28,7 +28,7 @@ export function LoginForm() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       });
-      router.push("/analyses");
+      router.push("/app");
       router.refresh();
     } catch (submissionError) {
       setError(
@@ -46,7 +46,7 @@ export function LoginForm() {
       <label className="block text-sm font-semibold">
         Email
         <input
-          className="mt-2 h-12 w-full rounded-xl border bg-white px-4 font-normal outline-none transition focus:border-brand focus:ring-3 focus:ring-brand/10"
+          className="field mt-2 h-12 font-normal"
           type="email"
           autoComplete="username"
           required
@@ -57,7 +57,7 @@ export function LoginForm() {
       <label className="block text-sm font-semibold">
         Password
         <input
-          className="mt-2 h-12 w-full rounded-xl border bg-white px-4 font-normal outline-none transition focus:border-brand focus:ring-3 focus:ring-brand/10"
+          className="field mt-2 h-12 font-normal"
           type="password"
           autoComplete="current-password"
           required
@@ -71,7 +71,7 @@ export function LoginForm() {
         </p>
       ) : null}
       <button
-        className="inline-flex h-12 w-full items-center justify-center gap-2 rounded-xl bg-brand px-5 text-sm font-semibold text-white transition hover:bg-brand-dark disabled:cursor-wait disabled:opacity-70"
+        className="button-primary h-12 w-full"
         disabled={submitting}
         type="submit"
       >

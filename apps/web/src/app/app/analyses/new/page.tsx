@@ -1,2 +1,8 @@
-import { AnalysisWorkspace } from "@/components/analysis-workspace";
-export default function NewCustomerAnalysisPage() { return <AnalysisWorkspace detailBasePath="/app/analyses" heading="Create an RFP analysis" />; }
+import type { Metadata } from "next";
+import { AnalysisCreate } from "@/components/analysis-create";
+
+export const metadata: Metadata = { title: "New analysis" };
+
+export default function NewCustomerAnalysisPage() {
+  return <AnalysisCreate />;
+}

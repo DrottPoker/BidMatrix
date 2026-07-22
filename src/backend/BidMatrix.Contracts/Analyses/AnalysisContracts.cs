@@ -51,13 +51,39 @@ public sealed record AnalysisRequirementResponse(
     string Id,
     string? RequirementCode,
     string RequirementText,
+    string OriginalRequirementText,
     string NormalizedRequirement,
     string Category,
     bool Mandatory,
     string? RequestedEvidence,
     decimal Confidence,
     string ReviewStatus,
+    string? CorrectionNote,
+    int Version,
     IReadOnlyList<AnalysisCitationResponse> Citations);
+
+public sealed record AnalysisFindingResponse(
+    string Id,
+    string FindingType,
+    string Title,
+    string Detail,
+    string OriginalDetail,
+    DateTimeOffset? DateValue,
+    decimal? WeightPercent,
+    decimal Confidence,
+    string ReviewStatus,
+    string? CorrectionNote,
+    int Version,
+    AnalysisCitationResponse Citation);
+
+public sealed record AnalysisPublicationResponse(
+    string AnalysisStatus,
+    DateTimeOffset? ReviewedAt,
+    DateTimeOffset? PublishedAt,
+    string? ReviewNote,
+    int CorrectionCount,
+    long? ProcessingDurationMilliseconds,
+    bool IsPublished);
 
 public sealed record AnalysisExtractionMetricsResponse(
     int DocumentCount,
@@ -65,6 +91,10 @@ public sealed record AnalysisExtractionMetricsResponse(
     int RequirementCount,
     int MandatoryRequirementCount,
     int CitedRequirementCount,
+    int KeyDateCount,
+    int RequestedDocumentCount,
+    int EvaluationCriterionCount,
+    int PendingReviewCount,
     int FilesRequiringOcr,
     int FailedFileCount);
 
@@ -76,8 +106,33 @@ public sealed record AnalysisRequirementsResponse(
     DateTimeOffset? CompletedAt,
     IReadOnlyList<AnalysisDocumentResponse> Documents,
     IReadOnlyList<AnalysisRequirementResponse> Requirements,
+    IReadOnlyList<AnalysisFindingResponse> KeyDates,
+    IReadOnlyList<AnalysisFindingResponse> RequestedDocuments,
+    IReadOnlyList<AnalysisFindingResponse> EvaluationCriteria,
+    AnalysisPublicationResponse Publication,
     AnalysisExtractionMetricsResponse Metrics,
     string Message);
+
+public sealed record ReviewRequirementRequest(
+    string RequirementText,
+    string Category,
+    bool Mandatory,
+    string ReviewStatus,
+    string? CorrectionNote,
+    int ExpectedVersion);
+
+public sealed record ReviewFindingRequest(
+    string Title,
+    string Detail,
+    DateTimeOffset? DateValue,
+    decimal? WeightPercent,
+    string ReviewStatus,
+    string? CorrectionNote,
+    int ExpectedVersion);
+
+public sealed record PublishAnalysisRequest(
+    string ReviewNote,
+    string Confirmation);
 
 public sealed record ClaimedEventResponse(
     string EventId,

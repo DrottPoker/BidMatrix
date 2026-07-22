@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
-import { AnalysisWorkspace } from "@/components/analysis-workspace";
+import { AnalysisList } from "@/components/analysis-list";
 
-export const metadata: Metadata = { title: "Owner analyses | BidMatrix" };
+export const metadata: Metadata = { title: "Analysis review" };
 
 export default function OwnerAnalysesPage() {
-  return <AnalysisWorkspace heading="Owner analysis queue" listEndpoint="/owner/v1/analyses" />;
+  return <AnalysisList detailBasePath="/owner/analyses" endpoint="/owner/v1/analyses" ownerMode showCreate={false} />;
 }

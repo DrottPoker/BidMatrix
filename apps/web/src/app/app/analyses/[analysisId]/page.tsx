@@ -1,6 +1,9 @@
+import type { Metadata } from "next";
 import { AnalysisDetail } from "@/components/analysis-detail";
 
-export default async function CustomerAnalysisPage({ params }: { params: Promise<{ analysisId: string }> }) {
+export const metadata: Metadata = { title: "Analysis" };
+
+export default async function CustomerAnalysisPage({ params }: PageProps<"/app/analyses/[analysisId]">) {
   const { analysisId } = await params;
-  return <main className="mx-auto max-w-4xl px-5 py-10 sm:px-8"><AnalysisDetail analysisId={analysisId} backHref="/app/analyses" /></main>;
+  return <AnalysisDetail analysisId={analysisId} />;
 }

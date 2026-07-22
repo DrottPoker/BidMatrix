@@ -1,4 +1,5 @@
 using System.Security.Cryptography;
+using System.Text;
 using System.Text.Json;
 using BidMatrix.Application.Analyses;
 using BidMatrix.Application.Audit;
@@ -12,6 +13,7 @@ public sealed class PostgresAnalysisExtractionService(
     IObjectStorage objectStorage,
     IDocumentTextExtractor textExtractor,
     IRequirementDetector requirementDetector,
+    IAnalysisFindingDetector findingDetector,
     IAuditWriter auditWriter,
     TimeProvider timeProvider) : IAnalysisExtractionService
 {
@@ -29,18 +31,14 @@ public sealed class PostgresAnalysisExtractionService(
 
         if (source.AnalysisStatus is not ("processing" or "requires_review"))
         {
-            throw new AnalysisOperationException(
-                "analysis_extraction_state_invalid",
-                $"Analysis {command.AnalysisId} cannot be extracted while its status is {source.AnalysisStatus}.",
-                StatusCodes.Status409Conflict);
+            throw InvalidState(command.AnalysisId, source.AnalysisStatus, "extracted");
         }
 
-        var extractionVersion = $"{textExtractor.Version}+{requirementDetector.Version}";
+        var extractionVersion = $"{textExtractor.Version}+{requirementDetector.Version}+{findingDetector.Version}";
         if (source.ExtractionStatus is "succeeded" or "partial" &&
             string.Equals(source.ExtractionVersion, extractionVersion, StringComparison.Ordinal))
         {
-            return await GetAsync(command.OrganizationId, command.AnalysisId, cancellationToken)
-                ?? throw NotFound(command.AnalysisId);
+            return await GetRequiredAsync(command.OrganizationId, command.AnalysisId, cancellationToken);
         }
 
         var processedFiles = new List<ProcessedFile>(source.Files.Count);
@@ -80,15 +78,10 @@ public sealed class PostgresAnalysisExtractionService(
             }
         }
 
-        var detectedRequirements = requirementDetector.Detect(allPages);
-        await PersistAsync(
-            command,
-            extractionVersion,
-            processedFiles,
-            detectedRequirements,
-            cancellationToken);
-        return await GetAsync(command.OrganizationId, command.AnalysisId, cancellationToken)
-            ?? throw NotFound(command.AnalysisId);
+        var requirements = requirementDetector.Detect(allPages);
+        var findings = findingDetector.Detect(allPages);
+        await PersistAsync(command, extractionVersion, processedFiles, requirements, findings, cancellationToken);
+        return await GetRequiredAsync(command.OrganizationId, command.AnalysisId, cancellationToken);
     }
 
     public async Task<AnalysisExtractionSnapshot?> GetAsync(
@@ -100,46 +93,244 @@ public sealed class PostgresAnalysisExtractionService(
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantContextAsync(connection, transaction, organizationId, cancellationToken);
 
-        string extractionStatus;
-        string? extractionVersion;
-        DateTimeOffset? completedAt;
-        await using (var header = connection.CreateCommand())
+        HeaderRow? header;
+        await using (var command = connection.CreateCommand())
         {
-            header.Transaction = transaction;
-            header.CommandText = "select extraction_status, extraction_version, extraction_completed_at from analyses where id = $1";
-            header.Parameters.AddWithValue(analysisId);
-            await using var reader = await header.ExecuteReaderAsync(cancellationToken);
-            if (!await reader.ReadAsync(cancellationToken))
-            {
-                await transaction.CommitAsync(cancellationToken);
-                return null;
-            }
+            command.Transaction = transaction;
+            command.CommandText = """
+                select status, extraction_status, extraction_version, extraction_completed_at,
+                    started_at, reviewed_at, published_at, review_note, correction_count
+                from analyses where id = $1
+                """;
+            command.Parameters.AddWithValue(analysisId);
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            header = await reader.ReadAsync(cancellationToken)
+                ? new HeaderRow(
+                    reader.GetString(0),
+                    reader.GetString(1),
+                    NullableString(reader, 2),
+                    NullableDateTimeOffset(reader, 3),
+                    NullableDateTimeOffset(reader, 4),
+                    NullableDateTimeOffset(reader, 5),
+                    NullableDateTimeOffset(reader, 6),
+                    NullableString(reader, 7),
+                    reader.GetInt32(8))
+                : null;
+        }
 
-            extractionStatus = reader.GetString(0);
-            extractionVersion = reader.IsDBNull(1) ? null : reader.GetString(1);
-            completedAt = reader.IsDBNull(2) ? null : reader.GetFieldValue<DateTimeOffset>(2);
+        if (header is null)
+        {
+            await transaction.CommitAsync(cancellationToken);
+            return null;
         }
 
         var documents = await LoadDocumentsAsync(connection, transaction, analysisId, cancellationToken);
         var requirements = await LoadRequirementsAsync(connection, transaction, analysisId, cancellationToken);
+        var findings = await LoadFindingsAsync(connection, transaction, analysisId, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        var pendingReviewCount = requirements.Count(item => item.ReviewStatus == "pending") +
+            findings.Count(item => item.ReviewStatus == "pending");
         var metrics = new AnalysisExtractionMetrics(
             documents.Count,
             documents.Sum(document => document.PageCount ?? 0),
-            requirements.Count,
-            requirements.Count(requirement => requirement.Mandatory),
-            requirements.Count(requirement => requirement.Citations.Count > 0),
+            requirements.Count(requirement => requirement.ReviewStatus != "rejected"),
+            requirements.Count(requirement => requirement.ReviewStatus != "rejected" && requirement.Mandatory),
+            requirements.Count(requirement => requirement.ReviewStatus != "rejected" && requirement.Citations.Count > 0),
+            findings.Count(finding => finding.FindingType == "key_date" && finding.ReviewStatus != "rejected"),
+            findings.Count(finding => finding.FindingType == "requested_document" && finding.ReviewStatus != "rejected"),
+            findings.Count(finding => finding.FindingType == "evaluation_criterion" && finding.ReviewStatus != "rejected"),
+            pendingReviewCount,
             documents.Count(document => document.ExtractionStatus == "requires_ocr"),
             documents.Count(document => document.ExtractionStatus == "failed"));
+        var duration = header.StartedAt is null || header.ExtractionCompletedAt is null
+            ? null
+            : (long?)(header.ExtractionCompletedAt.Value - header.StartedAt.Value).TotalMilliseconds;
         return new AnalysisExtractionSnapshot(
             analysisId,
-            extractionStatus,
-            extractionVersion,
-            completedAt,
+            header.ExtractionStatus,
+            header.ExtractionVersion,
+            header.ExtractionCompletedAt,
             documents,
             requirements,
+            findings,
+            new AnalysisPublicationRecord(
+                header.AnalysisStatus,
+                header.ReviewedAt,
+                header.PublishedAt,
+                header.ReviewNote,
+                header.CorrectionCount,
+                duration,
+                header.AnalysisStatus == "completed" && header.PublishedAt is not null),
             metrics);
+    }
+
+    public async Task<AnalysisExtractionSnapshot> ReviewRequirementAsync(
+        ReviewRequirementCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReview(command.RequirementText, command.Category, command.ReviewStatus, command.CorrectionNote);
+        var now = timeProvider.GetUtcNow();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetTenantContextAsync(connection, transaction, command.OrganizationId, cancellationToken);
+        await EnsureReviewableAsync(connection, transaction, command.AnalysisId, cancellationToken);
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update analysis_requirements
+                set requirement_text = $1,
+                    normalized_requirement = $2,
+                    category = $3,
+                    mandatory = $4,
+                    review_status = $5,
+                    correction_note = $6,
+                    reviewed_by_user_id = $7,
+                    reviewed_at = $8,
+                    updated_at = $8,
+                    version = version + 1
+                where id = $9 and analysis_id = $10 and version = $11
+                """;
+            update.Parameters.AddWithValue(command.RequirementText.Trim());
+            update.Parameters.AddWithValue(DeterministicRequirementDetector.NormalizeRequirement(command.RequirementText));
+            update.Parameters.AddWithValue(command.Category.Trim());
+            update.Parameters.AddWithValue(command.Mandatory);
+            update.Parameters.AddWithValue(command.ReviewStatus);
+            update.Parameters.AddWithValue((object?)NormalizeOptional(command.CorrectionNote) ?? DBNull.Value);
+            update.Parameters.AddWithValue(command.OwnerUserId);
+            update.Parameters.AddWithValue(now);
+            update.Parameters.AddWithValue(command.RequirementId);
+            update.Parameters.AddWithValue(command.AnalysisId);
+            update.Parameters.AddWithValue(command.ExpectedVersion);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw VersionConflict("requirement");
+            }
+        }
+
+        await RefreshCorrectionCountAsync(connection, transaction, command.AnalysisId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await WriteReviewAuditAsync(command.OrganizationId, command.OwnerUserId, command.AnalysisId,
+            "analysis.requirement_reviewed", $"Requirement {command.RequirementId} was {command.ReviewStatus}.",
+            command.CorrelationId, cancellationToken);
+        return await GetRequiredAsync(command.OrganizationId, command.AnalysisId, cancellationToken);
+    }
+
+    public async Task<AnalysisExtractionSnapshot> ReviewFindingAsync(
+        ReviewFindingCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateReview(command.Detail, command.Title, command.ReviewStatus, command.CorrectionNote);
+        if (command.WeightPercent is < 0 or > 100)
+        {
+            throw InvalidRequest("Finding weight must be between 0 and 100 percent.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetTenantContextAsync(connection, transaction, command.OrganizationId, cancellationToken);
+        await EnsureReviewableAsync(connection, transaction, command.AnalysisId, cancellationToken);
+
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update analysis_findings
+                set title = $1,
+                    detail = $2,
+                    date_value = $3,
+                    weight_percent = $4,
+                    review_status = $5,
+                    correction_note = $6,
+                    reviewed_by_user_id = $7,
+                    reviewed_at = $8,
+                    updated_at = $8,
+                    version = version + 1
+                where id = $9 and analysis_id = $10 and version = $11
+                """;
+            update.Parameters.AddWithValue(command.Title.Trim());
+            update.Parameters.AddWithValue(command.Detail.Trim());
+            update.Parameters.AddWithValue((object?)command.DateValue ?? DBNull.Value);
+            update.Parameters.AddWithValue((object?)command.WeightPercent ?? DBNull.Value);
+            update.Parameters.AddWithValue(command.ReviewStatus);
+            update.Parameters.AddWithValue((object?)NormalizeOptional(command.CorrectionNote) ?? DBNull.Value);
+            update.Parameters.AddWithValue(command.OwnerUserId);
+            update.Parameters.AddWithValue(now);
+            update.Parameters.AddWithValue(command.FindingId);
+            update.Parameters.AddWithValue(command.AnalysisId);
+            update.Parameters.AddWithValue(command.ExpectedVersion);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw VersionConflict("finding");
+            }
+        }
+
+        await RefreshCorrectionCountAsync(connection, transaction, command.AnalysisId, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await WriteReviewAuditAsync(command.OrganizationId, command.OwnerUserId, command.AnalysisId,
+            "analysis.finding_reviewed", $"Finding {command.FindingId} was {command.ReviewStatus}.",
+            command.CorrelationId, cancellationToken);
+        return await GetRequiredAsync(command.OrganizationId, command.AnalysisId, cancellationToken);
+    }
+
+    public async Task<AnalysisExtractionSnapshot> PublishAsync(
+        PublishAnalysisCommand command,
+        CancellationToken cancellationToken = default)
+    {
+        if (command.Confirmation != "PUBLISH REVIEWED ANALYSIS")
+        {
+            throw InvalidRequest("The exact publish confirmation is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(command.ReviewNote) || command.ReviewNote.Trim().Length is < 10 or > 2_000)
+        {
+            throw InvalidRequest("A review note between 10 and 2,000 characters is required.");
+        }
+
+        var now = timeProvider.GetUtcNow();
+        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
+        await SetTenantContextAsync(connection, transaction, command.OrganizationId, cancellationToken);
+        await EnsureReviewableAsync(connection, transaction, command.AnalysisId, cancellationToken);
+
+        await ExecuteReviewAcceptanceAsync(connection, transaction, command.AnalysisId, command.OwnerUserId, now, cancellationToken);
+        await RefreshCorrectionCountAsync(connection, transaction, command.AnalysisId, now, cancellationToken);
+        await using (var update = connection.CreateCommand())
+        {
+            update.Transaction = transaction;
+            update.CommandText = """
+                update analyses
+                set status = 'completed',
+                    requires_human_review = false,
+                    reviewed_by_user_id = $1,
+                    reviewed_at = $2,
+                    published_at = $2,
+                    review_note = $3,
+                    completed_at = $2,
+                    updated_at = $2,
+                    version = version + 1
+                where id = $4 and status = 'requires_review'
+                  and extraction_status in ('succeeded', 'partial')
+                """;
+            update.Parameters.AddWithValue(command.OwnerUserId);
+            update.Parameters.AddWithValue(now);
+            update.Parameters.AddWithValue(command.ReviewNote.Trim());
+            update.Parameters.AddWithValue(command.AnalysisId);
+            if (await update.ExecuteNonQueryAsync(cancellationToken) != 1)
+            {
+                throw InvalidState(command.AnalysisId, "unknown", "published");
+            }
+        }
+
+        await InsertPublicationEventAsync(connection, transaction, command, now, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        await WriteReviewAuditAsync(command.OrganizationId, command.OwnerUserId, command.AnalysisId,
+            "analysis.published", "Owner reviewed and published the F2 analysis to the customer.",
+            command.CorrelationId, cancellationToken);
+        return await GetRequiredAsync(command.OrganizationId, command.AnalysisId, cancellationToken);
     }
 
     private async Task PersistAsync(
@@ -147,6 +338,7 @@ public sealed class PostgresAnalysisExtractionService(
         string extractionVersion,
         IReadOnlyList<ProcessedFile> processedFiles,
         IReadOnlyList<DetectedRequirement> detectedRequirements,
+        IReadOnlyList<DetectedFinding> detectedFindings,
         CancellationToken cancellationToken)
     {
         var now = timeProvider.GetUtcNow();
@@ -156,134 +348,28 @@ public sealed class PostgresAnalysisExtractionService(
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         await SetTenantContextAsync(connection, transaction, command.OrganizationId, cancellationToken);
+        await EnsureExtractableAsync(connection, transaction, command.AnalysisId, cancellationToken);
 
-        await using (var lockCommand = connection.CreateCommand())
-        {
-            lockCommand.Transaction = transaction;
-            lockCommand.CommandText = "select status from analyses where id = $1 for update";
-            lockCommand.Parameters.AddWithValue(command.AnalysisId);
-            var analysisStatus = await lockCommand.ExecuteScalarAsync(cancellationToken) as string;
-            if (analysisStatus is null)
-            {
-                throw NotFound(command.AnalysisId);
-            }
-
-            if (analysisStatus is not ("processing" or "requires_review"))
-            {
-                throw new AnalysisOperationException(
-                    "analysis_extraction_state_invalid",
-                    $"Analysis {command.AnalysisId} cannot store extraction results while its status is {analysisStatus}.",
-                    StatusCodes.Status409Conflict);
-            }
-        }
-
+        await ExecuteAsync(connection, transaction, "delete from analysis_findings where analysis_id = $1", command.AnalysisId, cancellationToken);
         await ExecuteAsync(connection, transaction, "delete from analysis_citations where analysis_id = $1", command.AnalysisId, cancellationToken);
         await ExecuteAsync(connection, transaction, "delete from analysis_requirements where analysis_id = $1", command.AnalysisId, cancellationToken);
         await ExecuteAsync(connection, transaction, "delete from analysis_pages where analysis_id = $1", command.AnalysisId, cancellationToken);
 
         foreach (var processedFile in processedFiles)
         {
-            foreach (var page in processedFile.Pages)
-            {
-                await using var insertPage = connection.CreateCommand();
-                insertPage.Transaction = transaction;
-                insertPage.CommandText = """
-                    insert into analysis_pages (
-                        id, organization_id, analysis_id, analysis_file_id, page_number,
-                        text_content, text_sha256, extraction_method, created_at
-                    )
-                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-                    """;
-                insertPage.Parameters.AddWithValue(Guid.CreateVersion7());
-                insertPage.Parameters.AddWithValue(command.OrganizationId);
-                insertPage.Parameters.AddWithValue(command.AnalysisId);
-                insertPage.Parameters.AddWithValue(processedFile.Source.Id);
-                insertPage.Parameters.AddWithValue(page.PageNumber);
-                insertPage.Parameters.AddWithValue(page.Text);
-                insertPage.Parameters.AddWithValue(Convert.ToHexStringLower(
-                    SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(page.Text))));
-                insertPage.Parameters.AddWithValue(textExtractor.Version);
-                insertPage.Parameters.AddWithValue(now);
-                await insertPage.ExecuteNonQueryAsync(cancellationToken);
-            }
-
-            await using var updateFile = connection.CreateCommand();
-            updateFile.Transaction = transaction;
-            updateFile.CommandText = """
-                update analysis_files
-                set extraction_status = $1,
-                    document_type = $2,
-                    page_count = $3,
-                    extraction_method = $4,
-                    extraction_failure_code = $5,
-                    extracted_at = $6,
-                    updated_at = $6
-                where id = $7
-                """;
-            updateFile.Parameters.AddWithValue(processedFile.ExtractionStatus);
-            updateFile.Parameters.AddWithValue((object?)processedFile.DocumentType ?? DBNull.Value);
-            updateFile.Parameters.AddWithValue(processedFile.Pages.Count);
-            updateFile.Parameters.AddWithValue(textExtractor.Version);
-            updateFile.Parameters.AddWithValue((object?)processedFile.FailureCode ?? DBNull.Value);
-            updateFile.Parameters.AddWithValue(now);
-            updateFile.Parameters.AddWithValue(processedFile.Source.Id);
-            await updateFile.ExecuteNonQueryAsync(cancellationToken);
+            await PersistFileAsync(connection, transaction, command, processedFile, now, cancellationToken);
         }
 
         foreach (var group in detectedRequirements.GroupBy(
                      requirement => requirement.NormalizedRequirement,
                      StringComparer.Ordinal))
         {
-            var representative = group.OrderByDescending(requirement => requirement.Confidence).First();
-            var requirementId = Guid.CreateVersion7();
-            await using (var insertRequirement = connection.CreateCommand())
-            {
-                insertRequirement.Transaction = transaction;
-                insertRequirement.CommandText = """
-                    insert into analysis_requirements (
-                        id, organization_id, analysis_id, requirement_code, requirement_text,
-                        normalized_requirement, category, mandatory, requested_evidence,
-                        confidence, review_status, created_at, updated_at
-                    )
-                    values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'pending', $11, $11)
-                    """;
-                insertRequirement.Parameters.AddWithValue(requirementId);
-                insertRequirement.Parameters.AddWithValue(command.OrganizationId);
-                insertRequirement.Parameters.AddWithValue(command.AnalysisId);
-                insertRequirement.Parameters.AddWithValue((object?)representative.RequirementCode ?? DBNull.Value);
-                insertRequirement.Parameters.AddWithValue(representative.RequirementText);
-                insertRequirement.Parameters.AddWithValue(representative.NormalizedRequirement);
-                insertRequirement.Parameters.AddWithValue(representative.Category);
-                insertRequirement.Parameters.AddWithValue(group.Any(requirement => requirement.Mandatory));
-                insertRequirement.Parameters.AddWithValue((object?)representative.RequestedEvidence ?? DBNull.Value);
-                insertRequirement.Parameters.AddWithValue(group.Max(requirement => requirement.Confidence));
-                insertRequirement.Parameters.AddWithValue(now);
-                await insertRequirement.ExecuteNonQueryAsync(cancellationToken);
-            }
+            await PersistRequirementAsync(connection, transaction, command, group, now, cancellationToken);
+        }
 
-            foreach (var citation in group.DistinctBy(
-                         item => (item.AnalysisFileId, item.PageNumber, item.QuoteText)))
-            {
-                await using var insertCitation = connection.CreateCommand();
-                insertCitation.Transaction = transaction;
-                insertCitation.CommandText = """
-                    insert into analysis_citations (
-                        id, organization_id, analysis_id, requirement_id, analysis_file_id,
-                        page_number, section_text, quote_text, bounding_data, created_at
-                    )
-                    values ($1, $2, $3, $4, $5, $6, $7, $8, null, $9)
-                    """;
-                insertCitation.Parameters.AddWithValue(Guid.CreateVersion7());
-                insertCitation.Parameters.AddWithValue(command.OrganizationId);
-                insertCitation.Parameters.AddWithValue(command.AnalysisId);
-                insertCitation.Parameters.AddWithValue(requirementId);
-                insertCitation.Parameters.AddWithValue(citation.AnalysisFileId);
-                insertCitation.Parameters.AddWithValue(citation.PageNumber);
-                insertCitation.Parameters.AddWithValue((object?)citation.SectionText ?? DBNull.Value);
-                insertCitation.Parameters.AddWithValue(citation.QuoteText);
-                insertCitation.Parameters.AddWithValue(now);
-                await insertCitation.ExecuteNonQueryAsync(cancellationToken);
-            }
+        foreach (var finding in detectedFindings)
+        {
+            await PersistFindingAsync(connection, transaction, command, finding, now, cancellationToken);
         }
 
         await using (var updateAnalysis = connection.CreateCommand())
@@ -295,6 +381,11 @@ public sealed class PostgresAnalysisExtractionService(
                     extraction_version = $2,
                     extraction_completed_at = $3,
                     requires_human_review = true,
+                    reviewed_by_user_id = null,
+                    reviewed_at = null,
+                    published_at = null,
+                    review_note = null,
+                    correction_count = 0,
                     updated_at = $3,
                     version = version + 1
                 where id = $4
@@ -306,13 +397,14 @@ public sealed class PostgresAnalysisExtractionService(
             await updateAnalysis.ExecuteNonQueryAsync(cancellationToken);
         }
 
-        await InsertOutboxEventAsync(
+        await InsertExtractionEventAsync(
             connection,
             transaction,
             command,
             extractionStatus,
             processedFiles.Sum(file => file.Pages.Count),
             detectedRequirements.Select(requirement => requirement.NormalizedRequirement).Distinct().Count(),
+            detectedFindings.Count,
             now,
             cancellationToken);
         await transaction.CommitAsync(cancellationToken);
@@ -327,13 +419,14 @@ public sealed class PostgresAnalysisExtractionService(
                 command.OrganizationId,
                 command.CorrelationId,
                 null,
-                "F1 digital PDF extraction completed and remains pending human review.",
+                "F2 digital PDF extraction completed and remains pending owner review.",
                 JsonSerializer.Serialize(new
                 {
                     extractionStatus,
                     documentCount = processedFiles.Count,
                     pageCount = processedFiles.Sum(file => file.Pages.Count),
                     requirementCount = detectedRequirements.Select(requirement => requirement.NormalizedRequirement).Distinct().Count(),
+                    findingCount = detectedFindings.Count,
                 }, JsonOptions),
                 now),
             cancellationToken);
@@ -365,7 +458,7 @@ public sealed class PostgresAnalysisExtractionService(
 
             analysisStatus = reader.GetString(0);
             extractionStatus = reader.GetString(1);
-            extractionVersion = reader.IsDBNull(2) ? null : reader.GetString(2);
+            extractionVersion = NullableString(reader, 2);
         }
 
         var files = new List<SourceFile>();
@@ -395,6 +488,12 @@ public sealed class PostgresAnalysisExtractionService(
         return new SourceState(analysisStatus, extractionStatus, extractionVersion, files);
     }
 
+    private async Task<AnalysisExtractionSnapshot> GetRequiredAsync(
+        Guid organizationId,
+        Guid analysisId,
+        CancellationToken cancellationToken) =>
+        await GetAsync(organizationId, analysisId, cancellationToken) ?? throw NotFound(analysisId);
+
     private static async Task<IReadOnlyList<AnalysisDocumentRecord>> LoadDocumentsAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
@@ -419,10 +518,10 @@ public sealed class PostgresAnalysisExtractionService(
                 reader.GetGuid(0),
                 reader.GetString(1),
                 reader.GetString(2),
-                reader.IsDBNull(3) ? null : reader.GetString(3),
+                NullableString(reader, 3),
                 reader.IsDBNull(4) ? null : reader.GetInt32(4),
-                reader.IsDBNull(5) ? null : reader.GetString(5),
-                reader.IsDBNull(6) ? null : reader.GetString(6)));
+                NullableString(reader, 5),
+                NullableString(reader, 6)));
         }
 
         return documents;
@@ -439,8 +538,9 @@ public sealed class PostgresAnalysisExtractionService(
         {
             command.Transaction = transaction;
             command.CommandText = """
-                select id, requirement_code, requirement_text, normalized_requirement, category,
-                    mandatory, requested_evidence, confidence, review_status
+                select id, requirement_code, requirement_text, original_requirement_text,
+                    normalized_requirement, category, mandatory, requested_evidence, confidence,
+                    review_status, correction_note, version
                 from analysis_requirements
                 where analysis_id = $1
                 order by mandatory desc, category, created_at
@@ -451,14 +551,17 @@ public sealed class PostgresAnalysisExtractionService(
             {
                 requirements.Add(new RequirementRow(
                     reader.GetGuid(0),
-                    reader.IsDBNull(1) ? null : reader.GetString(1),
+                    NullableString(reader, 1),
                     reader.GetString(2),
                     reader.GetString(3),
                     reader.GetString(4),
-                    !reader.IsDBNull(5) && reader.GetBoolean(5),
-                    reader.IsDBNull(6) ? null : reader.GetString(6),
-                    reader.IsDBNull(7) ? 0m : reader.GetDecimal(7),
-                    reader.GetString(8)));
+                    reader.GetString(5),
+                    !reader.IsDBNull(6) && reader.GetBoolean(6),
+                    NullableString(reader, 7),
+                    reader.IsDBNull(8) ? 0m : reader.GetDecimal(8),
+                    reader.GetString(9),
+                    NullableString(reader, 10),
+                    reader.GetInt32(11)));
             }
         }
 
@@ -483,19 +586,15 @@ public sealed class PostgresAnalysisExtractionService(
             while (await reader.ReadAsync(cancellationToken))
             {
                 var requirementId = reader.GetGuid(1);
-                if (!citations.TryGetValue(requirementId, out var requirementCitations))
+                if (!citations.TryGetValue(requirementId, out var items))
                 {
-                    requirementCitations = [];
-                    citations[requirementId] = requirementCitations;
+                    items = [];
+                    citations[requirementId] = items;
                 }
 
-                requirementCitations.Add(new AnalysisCitationRecord(
-                    reader.GetGuid(0),
-                    reader.GetGuid(2),
-                    reader.GetString(3),
-                    reader.GetInt32(4),
-                    reader.IsDBNull(5) ? null : reader.GetString(5),
-                    reader.GetString(6)));
+                items.Add(new AnalysisCitationRecord(
+                    reader.GetGuid(0), reader.GetGuid(2), reader.GetString(3), reader.GetInt32(4),
+                    NullableString(reader, 5), reader.GetString(6)));
             }
         }
 
@@ -503,13 +602,299 @@ public sealed class PostgresAnalysisExtractionService(
             requirement.Id,
             requirement.RequirementCode,
             requirement.RequirementText,
+            requirement.OriginalRequirementText,
             requirement.NormalizedRequirement,
             requirement.Category,
             requirement.Mandatory,
             requirement.RequestedEvidence,
             requirement.Confidence,
             requirement.ReviewStatus,
+            requirement.CorrectionNote,
+            requirement.Version,
             citations.GetValueOrDefault(requirement.Id) ?? [])).ToArray();
+    }
+
+    private static async Task<IReadOnlyList<AnalysisFindingRecord>> LoadFindingsAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid analysisId,
+        CancellationToken cancellationToken)
+    {
+        var findings = new List<AnalysisFindingRecord>();
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            select finding.id, finding.finding_type, finding.title, finding.detail,
+                finding.original_detail, finding.date_value, finding.weight_percent,
+                finding.confidence, finding.review_status, finding.correction_note,
+                finding.version, finding.analysis_file_id, file.original_file_name,
+                finding.page_number, finding.section_text, finding.quote_text
+            from analysis_findings finding
+            join analysis_files file on file.id = finding.analysis_file_id
+            where finding.analysis_id = $1
+            order by finding.finding_type, finding.date_value nulls last, finding.created_at
+            """;
+        command.Parameters.AddWithValue(analysisId);
+        await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+        while (await reader.ReadAsync(cancellationToken))
+        {
+            var findingId = reader.GetGuid(0);
+            findings.Add(new AnalysisFindingRecord(
+                findingId,
+                reader.GetString(1),
+                reader.GetString(2),
+                reader.GetString(3),
+                reader.GetString(4),
+                NullableDateTimeOffset(reader, 5),
+                reader.IsDBNull(6) ? null : reader.GetDecimal(6),
+                reader.GetDecimal(7),
+                reader.GetString(8),
+                NullableString(reader, 9),
+                reader.GetInt32(10),
+                new AnalysisCitationRecord(
+                    findingId,
+                    reader.GetGuid(11),
+                    reader.GetString(12),
+                    reader.GetInt32(13),
+                    NullableString(reader, 14),
+                    reader.GetString(15))));
+        }
+
+        return findings;
+    }
+
+    private async Task PersistFileAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ExtractAnalysisCommand command,
+        ProcessedFile processedFile,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        foreach (var page in processedFile.Pages)
+        {
+            await using var insertPage = connection.CreateCommand();
+            insertPage.Transaction = transaction;
+            insertPage.CommandText = """
+                insert into analysis_pages (
+                    id, organization_id, analysis_id, analysis_file_id, page_number,
+                    text_content, text_sha256, extraction_method, created_at
+                ) values ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                """;
+            insertPage.Parameters.AddWithValue(Guid.CreateVersion7());
+            insertPage.Parameters.AddWithValue(command.OrganizationId);
+            insertPage.Parameters.AddWithValue(command.AnalysisId);
+            insertPage.Parameters.AddWithValue(processedFile.Source.Id);
+            insertPage.Parameters.AddWithValue(page.PageNumber);
+            insertPage.Parameters.AddWithValue(page.Text);
+            insertPage.Parameters.AddWithValue(Convert.ToHexStringLower(SHA256.HashData(Encoding.UTF8.GetBytes(page.Text))));
+            insertPage.Parameters.AddWithValue(textExtractor.Version);
+            insertPage.Parameters.AddWithValue(now);
+            await insertPage.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var updateFile = connection.CreateCommand();
+        updateFile.Transaction = transaction;
+        updateFile.CommandText = """
+            update analysis_files
+            set extraction_status = $1, document_type = $2, page_count = $3,
+                extraction_method = $4, extraction_failure_code = $5,
+                extracted_at = $6, updated_at = $6
+            where id = $7
+            """;
+        updateFile.Parameters.AddWithValue(processedFile.ExtractionStatus);
+        updateFile.Parameters.AddWithValue((object?)processedFile.DocumentType ?? DBNull.Value);
+        updateFile.Parameters.AddWithValue(processedFile.Pages.Count);
+        updateFile.Parameters.AddWithValue(textExtractor.Version);
+        updateFile.Parameters.AddWithValue((object?)processedFile.FailureCode ?? DBNull.Value);
+        updateFile.Parameters.AddWithValue(now);
+        updateFile.Parameters.AddWithValue(processedFile.Source.Id);
+        await updateFile.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task PersistRequirementAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ExtractAnalysisCommand command,
+        IGrouping<string, DetectedRequirement> group,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        var representative = group.OrderByDescending(requirement => requirement.Confidence).First();
+        var requirementId = Guid.CreateVersion7();
+        await using (var insert = connection.CreateCommand())
+        {
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                insert into analysis_requirements (
+                    id, organization_id, analysis_id, requirement_code, requirement_text,
+                    original_requirement_text, normalized_requirement, category, mandatory,
+                    requested_evidence, confidence, review_status, created_at, updated_at, version
+                ) values ($1, $2, $3, $4, $5, $5, $6, $7, $8, $9, $10, 'pending', $11, $11, 1)
+                """;
+            insert.Parameters.AddWithValue(requirementId);
+            insert.Parameters.AddWithValue(command.OrganizationId);
+            insert.Parameters.AddWithValue(command.AnalysisId);
+            insert.Parameters.AddWithValue((object?)representative.RequirementCode ?? DBNull.Value);
+            insert.Parameters.AddWithValue(representative.RequirementText);
+            insert.Parameters.AddWithValue(representative.NormalizedRequirement);
+            insert.Parameters.AddWithValue(representative.Category);
+            insert.Parameters.AddWithValue(group.Any(requirement => requirement.Mandatory));
+            insert.Parameters.AddWithValue((object?)representative.RequestedEvidence ?? DBNull.Value);
+            insert.Parameters.AddWithValue(group.Max(requirement => requirement.Confidence));
+            insert.Parameters.AddWithValue(now);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        foreach (var citation in group.DistinctBy(item => (item.AnalysisFileId, item.PageNumber, item.QuoteText)))
+        {
+            await using var insert = connection.CreateCommand();
+            insert.Transaction = transaction;
+            insert.CommandText = """
+                insert into analysis_citations (
+                    id, organization_id, analysis_id, requirement_id, analysis_file_id,
+                    page_number, section_text, quote_text, bounding_data, created_at
+                ) values ($1, $2, $3, $4, $5, $6, $7, $8, null, $9)
+                """;
+            insert.Parameters.AddWithValue(Guid.CreateVersion7());
+            insert.Parameters.AddWithValue(command.OrganizationId);
+            insert.Parameters.AddWithValue(command.AnalysisId);
+            insert.Parameters.AddWithValue(requirementId);
+            insert.Parameters.AddWithValue(citation.AnalysisFileId);
+            insert.Parameters.AddWithValue(citation.PageNumber);
+            insert.Parameters.AddWithValue((object?)citation.SectionText ?? DBNull.Value);
+            insert.Parameters.AddWithValue(citation.QuoteText);
+            insert.Parameters.AddWithValue(now);
+            await insert.ExecuteNonQueryAsync(cancellationToken);
+        }
+    }
+
+    private static async Task PersistFindingAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        ExtractAnalysisCommand command,
+        DetectedFinding finding,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var insert = connection.CreateCommand();
+        insert.Transaction = transaction;
+        insert.CommandText = """
+            insert into analysis_findings (
+                id, organization_id, analysis_id, finding_type, title, detail,
+                original_detail, normalized_value, date_value, weight_percent,
+                confidence, review_status, analysis_file_id, page_number,
+                section_text, quote_text, created_at, updated_at, version
+            ) values ($1, $2, $3, $4, $5, $6, $6, $7, $8, $9, $10,
+                'pending', $11, $12, $13, $14, $15, $15, 1)
+            on conflict (analysis_id, finding_type, normalized_value, analysis_file_id, page_number) do nothing
+            """;
+        insert.Parameters.AddWithValue(Guid.CreateVersion7());
+        insert.Parameters.AddWithValue(command.OrganizationId);
+        insert.Parameters.AddWithValue(command.AnalysisId);
+        insert.Parameters.AddWithValue(finding.FindingType);
+        insert.Parameters.AddWithValue(finding.Title);
+        insert.Parameters.AddWithValue(finding.Detail);
+        insert.Parameters.AddWithValue(finding.NormalizedValue);
+        insert.Parameters.AddWithValue((object?)finding.DateValue ?? DBNull.Value);
+        insert.Parameters.AddWithValue((object?)finding.WeightPercent ?? DBNull.Value);
+        insert.Parameters.AddWithValue(finding.Confidence);
+        insert.Parameters.AddWithValue(finding.AnalysisFileId);
+        insert.Parameters.AddWithValue(finding.PageNumber);
+        insert.Parameters.AddWithValue((object?)finding.SectionText ?? DBNull.Value);
+        insert.Parameters.AddWithValue(finding.QuoteText);
+        insert.Parameters.AddWithValue(now);
+        await insert.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task EnsureExtractableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid analysisId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select status from analyses where id = $1 for update";
+        command.Parameters.AddWithValue(analysisId);
+        var status = await command.ExecuteScalarAsync(cancellationToken) as string;
+        if (status is null) throw NotFound(analysisId);
+        if (status is not ("processing" or "requires_review")) throw InvalidState(analysisId, status, "store extraction results");
+    }
+
+    private static async Task EnsureReviewableAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid analysisId,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "select status from analyses where id = $1 for update";
+        command.Parameters.AddWithValue(analysisId);
+        var status = await command.ExecuteScalarAsync(cancellationToken) as string;
+        if (status is null) throw NotFound(analysisId);
+        if (status != "requires_review") throw InvalidState(analysisId, status, "reviewed");
+    }
+
+    private static async Task ExecuteReviewAcceptanceAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid analysisId,
+        Guid ownerUserId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using (var requirements = connection.CreateCommand())
+        {
+            requirements.Transaction = transaction;
+            requirements.CommandText = """
+                update analysis_requirements
+                set review_status = 'accepted', reviewed_by_user_id = $1, reviewed_at = $2,
+                    updated_at = $2, version = version + 1
+                where analysis_id = $3 and review_status = 'pending'
+                """;
+            requirements.Parameters.AddWithValue(ownerUserId);
+            requirements.Parameters.AddWithValue(now);
+            requirements.Parameters.AddWithValue(analysisId);
+            await requirements.ExecuteNonQueryAsync(cancellationToken);
+        }
+
+        await using var findings = connection.CreateCommand();
+        findings.Transaction = transaction;
+        findings.CommandText = """
+            update analysis_findings
+            set review_status = 'accepted', reviewed_by_user_id = $1, reviewed_at = $2,
+                updated_at = $2, version = version + 1
+            where analysis_id = $3 and review_status = 'pending'
+            """;
+        findings.Parameters.AddWithValue(ownerUserId);
+        findings.Parameters.AddWithValue(now);
+        findings.Parameters.AddWithValue(analysisId);
+        await findings.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private static async Task RefreshCorrectionCountAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid analysisId,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            update analyses
+            set correction_count =
+                (select count(*) from analysis_requirements where analysis_id = $1 and review_status = 'corrected') +
+                (select count(*) from analysis_findings where analysis_id = $1 and review_status = 'corrected'),
+                updated_at = $2,
+                version = version + 1
+            where id = $1
+            """;
+        command.Parameters.AddWithValue(analysisId);
+        command.Parameters.AddWithValue(now);
+        await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
     private static async Task ExecuteAsync(
@@ -539,49 +924,138 @@ public sealed class PostgresAnalysisExtractionService(
         await command.ExecuteNonQueryAsync(cancellationToken);
     }
 
-    private static async Task InsertOutboxEventAsync(
+    private static async Task InsertExtractionEventAsync(
         NpgsqlConnection connection,
         NpgsqlTransaction transaction,
         ExtractAnalysisCommand command,
         string extractionStatus,
         int pageCount,
         int requirementCount,
+        int findingCount,
         DateTimeOffset occurredAt,
         CancellationToken cancellationToken)
     {
         var eventId = Guid.CreateVersion7();
-        var eventType = "analysis.extraction_completed.v1";
-        var envelope = JsonSerializer.Serialize(new
-        {
+        await InsertEventAsync(
+            connection,
+            transaction,
             eventId,
-            eventType,
+            "analysis.extraction_completed.v2",
+            command.AnalysisId,
+            JsonSerializer.Serialize(new
+            {
+                eventId,
+                eventType = "analysis.extraction_completed.v2",
+                occurredAt,
+                correlationId = command.CorrelationId,
+                organizationId = command.OrganizationId,
+                actor = new { type = "service", id = "analysis-intake-workflow" },
+                payload = new { analysisId = command.AnalysisId, extractionStatus, pageCount, requirementCount, findingCount },
+            }, JsonOptions),
             occurredAt,
-            correlationId = command.CorrelationId,
-            causationId = (string?)null,
-            organizationId = command.OrganizationId,
-            actor = new { type = "service", id = "analysis-intake-workflow" },
-            payload = new { analysisId = command.AnalysisId, extractionStatus, pageCount, requirementCount },
-        }, JsonOptions);
+            cancellationToken);
+    }
+
+    private static async Task InsertPublicationEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        PublishAnalysisCommand command,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
+        var eventId = Guid.CreateVersion7();
+        await InsertEventAsync(
+            connection,
+            transaction,
+            eventId,
+            "analysis.published.v1",
+            command.AnalysisId,
+            JsonSerializer.Serialize(new
+            {
+                eventId,
+                eventType = "analysis.published.v1",
+                occurredAt,
+                correlationId = command.CorrelationId,
+                organizationId = command.OrganizationId,
+                actor = new { type = "user", id = command.OwnerUserId },
+                payload = new { analysisId = command.AnalysisId },
+            }, JsonOptions),
+            occurredAt,
+            cancellationToken);
+    }
+
+    private static async Task InsertEventAsync(
+        NpgsqlConnection connection,
+        NpgsqlTransaction transaction,
+        Guid eventId,
+        string eventType,
+        Guid analysisId,
+        string payload,
+        DateTimeOffset occurredAt,
+        CancellationToken cancellationToken)
+    {
         await using var insert = connection.CreateCommand();
         insert.Transaction = transaction;
         insert.CommandText = """
             insert into outbox_events (
                 id, event_type, aggregate_type, aggregate_id, payload, occurred_at, available_at
-            )
-            values ($1, $2, 'analysis', $3, $4::jsonb, $5, $5)
+            ) values ($1, $2, 'analysis', $3, $4::jsonb, $5, $5)
             """;
         insert.Parameters.AddWithValue(eventId);
         insert.Parameters.AddWithValue(eventType);
-        insert.Parameters.AddWithValue(command.AnalysisId);
-        insert.Parameters.AddWithValue(envelope);
+        insert.Parameters.AddWithValue(analysisId);
+        insert.Parameters.AddWithValue(payload);
         insert.Parameters.AddWithValue(occurredAt);
         await insert.ExecuteNonQueryAsync(cancellationToken);
     }
 
+    private async Task WriteReviewAuditAsync(
+        Guid organizationId,
+        Guid ownerUserId,
+        Guid analysisId,
+        string action,
+        string summary,
+        string correlationId,
+        CancellationToken cancellationToken) => await auditWriter.AppendAsync(
+            new AuditEventWrite(
+                "user", ownerUserId.ToString(), action, "analysis", analysisId.ToString(),
+                organizationId, correlationId, null, summary, "{}", timeProvider.GetUtcNow()),
+            cancellationToken);
+
+    private static void ValidateReview(string detail, string titleOrCategory, string status, string? correctionNote)
+    {
+        if (string.IsNullOrWhiteSpace(detail) || detail.Trim().Length > 5_000 ||
+            string.IsNullOrWhiteSpace(titleOrCategory) || titleOrCategory.Trim().Length > 200 ||
+            status is not ("accepted" or "corrected" or "rejected") ||
+            (status == "corrected" && string.IsNullOrWhiteSpace(correctionNote)) ||
+            correctionNote?.Trim().Length > 2_000)
+        {
+            throw InvalidRequest("The review update is invalid or incomplete.");
+        }
+    }
+
+    private static string? NormalizeOptional(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
     private static AnalysisOperationException NotFound(Guid analysisId) => new(
-        "analysis_not_found",
-        $"Analysis {analysisId} was not found.",
-        StatusCodes.Status404NotFound);
+        "analysis_not_found", $"Analysis {analysisId} was not found.", StatusCodes.Status404NotFound);
+
+    private static AnalysisOperationException InvalidState(Guid analysisId, string status, string action) => new(
+        "analysis_review_state_invalid",
+        $"Analysis {analysisId} cannot be {action} while its status is {status}.",
+        StatusCodes.Status409Conflict);
+
+    private static AnalysisOperationException VersionConflict(string target) => new(
+        "review_version_conflict", $"The {target} changed before this review update.", StatusCodes.Status409Conflict);
+
+    private static AnalysisOperationException InvalidRequest(string message) => new(
+        "invalid_analysis_review", message, StatusCodes.Status400BadRequest);
+
+    private static string? NullableString(NpgsqlDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetString(ordinal);
+
+    private static DateTimeOffset? NullableDateTimeOffset(NpgsqlDataReader reader, int ordinal) =>
+        reader.IsDBNull(ordinal) ? null : reader.GetFieldValue<DateTimeOffset>(ordinal);
 
     private sealed record SourceFile(
         Guid Id,
@@ -595,6 +1069,17 @@ public sealed class PostgresAnalysisExtractionService(
         string ExtractionStatus,
         string? ExtractionVersion,
         IReadOnlyList<SourceFile> Files);
+
+    private sealed record HeaderRow(
+        string AnalysisStatus,
+        string ExtractionStatus,
+        string? ExtractionVersion,
+        DateTimeOffset? ExtractionCompletedAt,
+        DateTimeOffset? StartedAt,
+        DateTimeOffset? ReviewedAt,
+        DateTimeOffset? PublishedAt,
+        string? ReviewNote,
+        int CorrectionCount);
 
     private sealed record ProcessedFile(
         SourceFile Source,
@@ -611,10 +1096,13 @@ public sealed class PostgresAnalysisExtractionService(
         Guid Id,
         string? RequirementCode,
         string RequirementText,
+        string OriginalRequirementText,
         string NormalizedRequirement,
         string Category,
         bool Mandatory,
         string? RequestedEvidence,
         decimal Confidence,
-        string ReviewStatus);
+        string ReviewStatus,
+        string? CorrectionNote,
+        int Version);
 }

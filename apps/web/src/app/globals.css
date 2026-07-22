@@ -1,13 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #f4f7f6;
-  --foreground: #17201d;
+  --background: #f4f3ee;
+  --foreground: #17231e;
   --surface: #ffffff;
-  --muted: #66736e;
-  --line: #dce4e1;
-  --brand: #0b6b57;
-  --brand-dark: #084d40;
+  --surface-muted: #eeeee8;
+  --muted: #66716c;
+  --line: #d9ddd8;
+  --brand: #14745d;
+  --brand-dark: #0b4d3e;
+  --ink: #10241d;
   --accent: #d8ff72;
 }
 
@@ -15,12 +17,14 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-surface: var(--surface);
+  --color-surface-muted: var(--surface-muted);
   --color-muted: var(--muted);
   --color-line: var(--line);
   --color-brand: var(--brand);
   --color-brand-dark: var(--brand-dark);
+  --color-ink: var(--ink);
   --color-accent: var(--accent);
-  --font-sans: "Aptos", "Segoe UI", Arial, sans-serif;
+  --font-sans: "Aptos", "Segoe UI Variable", "Segoe UI", Arial, sans-serif;
 }
 
 * {
@@ -32,12 +36,73 @@ html {
 }
 
 body {
-  background: var(--background);
+  background:
+    radial-gradient(circle at 82% -10%, rgb(216 255 114 / 16%), transparent 28rem),
+    var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
+  text-rendering: optimizeLegibility;
+}
+
+button,
+a,
+input,
+textarea,
+select {
+  outline-offset: 3px;
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+select:focus-visible {
+  outline: 2px solid var(--brand);
+}
+
+button:not(:disabled),
+label:has(input:not(:disabled)) {
+  cursor: pointer;
 }
 
 ::selection {
   background: var(--accent);
-  color: var(--brand-dark);
+  color: var(--ink);
+}
+
+@layer components {
+  .page-shell {
+    @apply mx-auto w-full max-w-[92rem] px-5 py-8 sm:px-8 sm:py-10 xl:px-12;
+  }
+
+  .eyebrow {
+    @apply text-[0.68rem] font-bold uppercase tracking-[0.2em] text-brand;
+  }
+
+  .panel {
+    @apply rounded-[1.4rem] border border-ink/8 bg-white shadow-[0_1px_2px_rgba(16,36,29,0.03),0_12px_35px_rgba(16,36,29,0.035)];
+  }
+
+  .button-primary {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-ink px-5 text-sm font-semibold text-white shadow-sm transition hover:-translate-y-0.5 hover:bg-brand-dark disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .button-secondary {
+    @apply inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-ink/12 bg-white px-4 text-sm font-semibold text-foreground shadow-sm transition hover:-translate-y-0.5 hover:border-ink/20 hover:bg-stone-50 disabled:pointer-events-none disabled:opacity-50;
+  }
+
+  .field {
+    @apply w-full rounded-xl border border-ink/12 bg-white px-4 text-sm text-foreground shadow-inner shadow-ink/[0.015] transition placeholder:text-muted/65 hover:border-ink/20 focus:border-brand;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

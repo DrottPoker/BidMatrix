@@ -36,10 +36,22 @@ public static class AnalysisEndpoints
         customer.MapGet("/{analysisId:guid}/requirements", GetRequirementsAsync)
             .WithName("GetAnalysisRequirements");
 
-        endpoints.MapGet("/owner/v1/analyses", ListAnalysesAsync)
+        var owner = endpoints.MapGroup("/owner/v1/analyses")
             .RequireAuthorization(BidMatrixPolicies.PlatformOwner)
-            .WithTags("Owner")
+            .WithTags("Owner");
+        owner.MapGet("", ListAnalysesAsync)
             .WithName("ListOwnerAnalyses");
+        owner.MapGet("/{analysisId:guid}/review", GetOwnerReviewAsync)
+            .WithName("GetOwnerAnalysisReview");
+        owner.MapPatch("/{analysisId:guid}/requirements/{requirementId:guid}", ReviewRequirementAsync)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .WithName("ReviewAnalysisRequirement");
+        owner.MapPatch("/{analysisId:guid}/findings/{findingId:guid}", ReviewFindingAsync)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .WithName("ReviewAnalysisFinding");
+        owner.MapPost("/{analysisId:guid}/publish", PublishAnalysisAsync)
+            .AddEndpointFilter<ValidateAntiforgeryFilter>()
+            .WithName("PublishReviewedAnalysis");
 
         var internalRoutes = endpoints.MapGroup("/internal/v1")
             .RequireAuthorization(BidMatrixPolicies.InternalService)
@@ -208,7 +220,104 @@ public static class AnalysisEndpoints
         var extraction = await service.GetAsync(GetOrganizationId(principal), analysisId, cancellationToken);
         return extraction is null
             ? Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Analysis not found")
+            : Results.Ok(ToResponse(extraction, publishedOnly: true));
+    }
+
+    private static async Task<IResult> GetOwnerReviewAsync(
+        Guid analysisId,
+        ClaimsPrincipal principal,
+        IAnalysisExtractionService service,
+        CancellationToken cancellationToken)
+    {
+        var extraction = await service.GetAsync(GetOrganizationId(principal), analysisId, cancellationToken);
+        return extraction is null
+            ? Results.Problem(statusCode: StatusCodes.Status404NotFound, title: "Analysis not found")
             : Results.Ok(ToResponse(extraction));
+    }
+
+    private static async Task<IResult> ReviewRequirementAsync(
+        Guid analysisId,
+        Guid requirementId,
+        [FromBody] ReviewRequirementRequest request,
+        HttpContext context,
+        IAnalysisExtractionService service,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await service.ReviewRequirementAsync(new ReviewRequirementCommand(
+                GetOrganizationId(context.User),
+                GetUserId(context.User),
+                analysisId,
+                requirementId,
+                request.RequirementText,
+                request.Category,
+                request.Mandatory,
+                request.ReviewStatus,
+                request.CorrectionNote,
+                request.ExpectedVersion,
+                context.TraceIdentifier), cancellationToken);
+            return Results.Ok(ToResponse(result));
+        }
+        catch (AnalysisOperationException exception)
+        {
+            return Problem(exception);
+        }
+    }
+
+    private static async Task<IResult> ReviewFindingAsync(
+        Guid analysisId,
+        Guid findingId,
+        [FromBody] ReviewFindingRequest request,
+        HttpContext context,
+        IAnalysisExtractionService service,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await service.ReviewFindingAsync(new ReviewFindingCommand(
+                GetOrganizationId(context.User),
+                GetUserId(context.User),
+                analysisId,
+                findingId,
+                request.Title,
+                request.Detail,
+                request.DateValue,
+                request.WeightPercent,
+                request.ReviewStatus,
+                request.CorrectionNote,
+                request.ExpectedVersion,
+                context.TraceIdentifier), cancellationToken);
+            return Results.Ok(ToResponse(result));
+        }
+        catch (AnalysisOperationException exception)
+        {
+            return Problem(exception);
+        }
+    }
+
+    private static async Task<IResult> PublishAnalysisAsync(
+        Guid analysisId,
+        [FromBody] PublishAnalysisRequest request,
+        HttpContext context,
+        IAnalysisExtractionService service,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var result = await service.PublishAsync(new PublishAnalysisCommand(
+                GetOrganizationId(context.User),
+                GetUserId(context.User),
+                analysisId,
+                request.ReviewNote,
+                request.Confirmation,
+                context.TraceIdentifier), cancellationToken);
+            return Results.Ok(ToResponse(result));
+        }
+        catch (AnalysisOperationException exception)
+        {
+            return Problem(exception);
+        }
     }
 
     private static async Task<IResult> ClaimEventsAsync(
@@ -407,21 +516,34 @@ public static class AnalysisEndpoints
         file.RetentionUntil,
         file.CreatedAt);
 
-    private static AnalysisRequirementsResponse ToResponse(AnalysisExtractionSnapshot extraction)
+    private static AnalysisRequirementsResponse ToResponse(
+        AnalysisExtractionSnapshot extraction,
+        bool publishedOnly = false)
     {
-        var capabilityStatus = extraction.ExtractionStatus is "succeeded" or "partial"
-            ? "requiresReview"
+        var capabilityStatus = extraction.Publication.IsPublished
+            ? "ready"
+            : extraction.ExtractionStatus is "succeeded" or "partial"
+                ? "qualityReview"
             : extraction.ExtractionStatus == "failed"
                 ? "failed"
                 : "notReady";
-        var message = extraction.ExtractionStatus switch
+        var message = extraction.Publication.IsPublished
+            ? "This analysis was quality reviewed and published by BidMatrix. Every item remains linked to its source."
+            : extraction.ExtractionStatus switch
         {
-            "succeeded" => "Digital PDF extraction completed. Every requirement and citation must be manually reviewed.",
-            "partial" => "Extraction completed with OCR or file failures. Missing content is explicit and manual review is required.",
+            "succeeded" => "Extraction is complete and is being quality reviewed before delivery.",
+            "partial" => "Extraction is in quality review. One or more files may require OCR or manual handling.",
             "failed" => "Document extraction failed. No unverified requirements were fabricated.",
             "processing" => "Digital PDF extraction is processing.",
             _ => "Digital PDF extraction has not started.",
         };
+        var showResults = !publishedOnly || extraction.Publication.IsPublished;
+        var requirements = showResults
+            ? extraction.Requirements.Where(item => item.ReviewStatus != "rejected").ToArray()
+            : [];
+        var findings = showResults
+            ? extraction.Findings.Where(item => item.ReviewStatus != "rejected").ToArray()
+            : [];
         return new AnalysisRequirementsResponse(
             extraction.AnalysisId.ToString(),
             capabilityStatus,
@@ -436,16 +558,19 @@ public static class AnalysisEndpoints
                 document.PageCount,
                 document.ExtractionMethod,
                 document.FailureCode)).ToArray(),
-            extraction.Requirements.Select(requirement => new AnalysisRequirementResponse(
+            requirements.Select(requirement => new AnalysisRequirementResponse(
                 requirement.Id.ToString(),
                 requirement.RequirementCode,
                 requirement.RequirementText,
+                requirement.OriginalRequirementText,
                 requirement.NormalizedRequirement,
                 requirement.Category,
                 requirement.Mandatory,
                 requirement.RequestedEvidence,
                 requirement.Confidence,
                 requirement.ReviewStatus,
+                requirement.CorrectionNote,
+                requirement.Version,
                 requirement.Citations.Select(citation => new AnalysisCitationResponse(
                     citation.Id.ToString(),
                     citation.AnalysisFileId.ToString(),
@@ -453,14 +578,49 @@ public static class AnalysisEndpoints
                     citation.PageNumber,
                     citation.SectionText,
                     citation.QuoteText)).ToArray())).ToArray(),
+            findings.Where(item => item.FindingType == "key_date").Select(ToResponse).ToArray(),
+            findings.Where(item => item.FindingType == "requested_document").Select(ToResponse).ToArray(),
+            findings.Where(item => item.FindingType == "evaluation_criterion").Select(ToResponse).ToArray(),
+            new AnalysisPublicationResponse(
+                extraction.Publication.AnalysisStatus,
+                extraction.Publication.ReviewedAt,
+                extraction.Publication.PublishedAt,
+                extraction.Publication.ReviewNote,
+                extraction.Publication.CorrectionCount,
+                extraction.Publication.ProcessingDurationMilliseconds,
+                extraction.Publication.IsPublished),
             new AnalysisExtractionMetricsResponse(
                 extraction.Metrics.DocumentCount,
                 extraction.Metrics.PageCount,
                 extraction.Metrics.RequirementCount,
                 extraction.Metrics.MandatoryRequirementCount,
                 extraction.Metrics.CitedRequirementCount,
+                extraction.Metrics.KeyDateCount,
+                extraction.Metrics.RequestedDocumentCount,
+                extraction.Metrics.EvaluationCriterionCount,
+                extraction.Metrics.PendingReviewCount,
                 extraction.Metrics.FilesRequiringOcr,
                 extraction.Metrics.FailedFileCount),
             message);
     }
+
+    private static AnalysisFindingResponse ToResponse(AnalysisFindingRecord finding) => new(
+        finding.Id.ToString(),
+        finding.FindingType,
+        finding.Title,
+        finding.Detail,
+        finding.OriginalDetail,
+        finding.DateValue,
+        finding.WeightPercent,
+        finding.Confidence,
+        finding.ReviewStatus,
+        finding.CorrectionNote,
+        finding.Version,
+        new AnalysisCitationResponse(
+            finding.Citation.Id.ToString(),
+            finding.Citation.AnalysisFileId.ToString(),
+            finding.Citation.OriginalFileName,
+            finding.Citation.PageNumber,
+            finding.Citation.SectionText,
+            finding.Citation.QuoteText));
 }

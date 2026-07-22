@@ -2,19 +2,17 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "BidMatrix | Foundation Console",
-  description:
-    "The honest, controlled foundation for reviewable RFP decision support.",
+  title: {
+    default: "BidMatrix",
+    template: "%s | BidMatrix",
+  },
+  description: "Quality-reviewed, source-linked RFP intelligence for focused IT and cybersecurity teams.",
 };
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className="h-full antialiased">
-      <body className="flex min-h-full flex-col">{children}</body>
+      <body className="min-h-full">{children}</body>
     </html>
   );
 }

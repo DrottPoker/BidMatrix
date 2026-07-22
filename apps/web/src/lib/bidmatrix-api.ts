@@ -27,6 +27,8 @@ export type Analysis = {
   files: AnalysisFile[];
 };
 
+export type AnalysisList = { analyses: Analysis[] };
+
 export type AnalysisDocumentExtraction = {
   analysisFileId: string;
   originalFileName: string;
@@ -50,13 +52,41 @@ export type AnalysisRequirement = {
   id: string;
   requirementCode: string | null;
   requirementText: string;
+  originalRequirementText: string;
   normalizedRequirement: string;
   category: string;
   mandatory: boolean;
   requestedEvidence: string | null;
   confidence: number;
   reviewStatus: string;
+  correctionNote: string | null;
+  version: number;
   citations: AnalysisCitation[];
+};
+
+export type AnalysisFinding = {
+  id: string;
+  findingType: "key_date" | "requested_document" | "evaluation_criterion";
+  title: string;
+  detail: string;
+  originalDetail: string;
+  dateValue: string | null;
+  weightPercent: number | null;
+  confidence: number;
+  reviewStatus: string;
+  correctionNote: string | null;
+  version: number;
+  citation: AnalysisCitation;
+};
+
+export type AnalysisPublication = {
+  analysisStatus: string;
+  reviewedAt: string | null;
+  publishedAt: string | null;
+  reviewNote: string | null;
+  correctionCount: number;
+  processingDurationMilliseconds: number | null;
+  isPublished: boolean;
 };
 
 export type AnalysisExtractionMetrics = {
@@ -65,6 +95,10 @@ export type AnalysisExtractionMetrics = {
   requirementCount: number;
   mandatoryRequirementCount: number;
   citedRequirementCount: number;
+  keyDateCount: number;
+  requestedDocumentCount: number;
+  evaluationCriterionCount: number;
+  pendingReviewCount: number;
   filesRequiringOcr: number;
   failedFileCount: number;
 };
@@ -77,8 +111,20 @@ export type AnalysisRequirements = {
   completedAt: string | null;
   documents: AnalysisDocumentExtraction[];
   requirements: AnalysisRequirement[];
+  keyDates: AnalysisFinding[];
+  requestedDocuments: AnalysisFinding[];
+  evaluationCriteria: AnalysisFinding[];
+  publication: AnalysisPublication;
   metrics: AnalysisExtractionMetrics;
   message: string;
+};
+
+export type CurrentUser = {
+  userId: string;
+  email: string;
+  displayName: string | null;
+  organizations: { organizationId: string; role: string }[];
+  platformRoles: string[];
 };
 
 type CsrfToken = {
@@ -142,4 +188,12 @@ async function readProblem(response: Response): Promise<ProblemDetails> {
   } catch {
     return {};
   }
+}
+
+export function formatApiError(error: unknown) {
+  if (error instanceof ApiError && error.status === 401) {
+    return "Your session has expired. Sign in again to continue.";
+  }
+
+  return error instanceof Error ? error.message : "The request could not be completed.";
 }

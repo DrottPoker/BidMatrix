@@ -1,8 +1,5 @@
-import type { Metadata } from "next";
-import { AnalysisWorkspace } from "@/components/analysis-workspace";
-
-export const metadata: Metadata = { title: "Analyses | BidMatrix" };
+import { redirect } from "next/navigation";
 
 export default function AnalysesPage() {
-  return <AnalysisWorkspace />;
+  redirect("/app/analyses");
 }

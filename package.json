@@ -2,7 +2,7 @@
   "name": "bidmatrix",
   "version": "0.1.0",
   "private": true,
-  "description": "BidMatrix Extraction Prototype F1 monorepo.",
+  "description": "BidMatrix Concierge Pilot F2 monorepo.",
   "engines": {
     "node": ">=24 <25"
   },

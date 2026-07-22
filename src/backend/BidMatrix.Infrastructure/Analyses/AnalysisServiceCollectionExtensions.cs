@@ -54,6 +54,7 @@ public static class AnalysisServiceCollectionExtensions
         services.AddSingleton<IFileScanner, ConfiguredFileScanner>();
         services.AddSingleton<IDocumentTextExtractor, PdfPigDocumentTextExtractor>();
         services.AddSingleton<IRequirementDetector, DeterministicRequirementDetector>();
+        services.AddSingleton<IAnalysisFindingDetector, DeterministicAnalysisFindingDetector>();
         services.AddScoped<IAnalysisService, PostgresAnalysisService>();
         services.AddScoped<IAnalysisExtractionService, PostgresAnalysisExtractionService>();
         services.AddScoped<IWorkflowBridgeService, PostgresWorkflowBridgeService>();

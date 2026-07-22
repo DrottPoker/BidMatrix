@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace BidMatrix.Infrastructure.Analyses;
@@ -22,6 +23,20 @@ public sealed record DetectedRequirement(
     string? SectionText,
     string QuoteText);
 
+public sealed record DetectedFinding(
+    string FindingType,
+    string Title,
+    string Detail,
+    string NormalizedValue,
+    DateTimeOffset? DateValue,
+    decimal? WeightPercent,
+    decimal Confidence,
+    Guid AnalysisFileId,
+    string OriginalFileName,
+    int PageNumber,
+    string? SectionText,
+    string QuoteText);
+
 public interface IRequirementDetector
 {
     string Version { get; }
@@ -29,6 +44,13 @@ public interface IRequirementDetector
     string Classify(IReadOnlyList<RequirementSourcePage> pages);
 
     IReadOnlyList<DetectedRequirement> Detect(IReadOnlyList<RequirementSourcePage> pages);
+}
+
+public interface IAnalysisFindingDetector
+{
+    string Version { get; }
+
+    IReadOnlyList<DetectedFinding> Detect(IReadOnlyList<RequirementSourcePage> pages);
 }
 
 public sealed class DeterministicRequirementDetector : IRequirementDetector
@@ -52,14 +74,6 @@ public sealed class DeterministicRequirementDetector : IRequirementDetector
         RegexTimeout);
     private static readonly Regex RequirementCodePattern = new(
         @"^\s*\[?(?<code>[A-Z]{2,}[A-Z0-9]*[-.]\d+(?:[-.]\d+)*)\]?\s*[:\-]?\s*",
-        RegexOptions.CultureInvariant,
-        RegexTimeout);
-    private static readonly Regex SentenceBoundaryPattern = new(
-        @"(?<=[.!?;])\s+(?=[A-Z0-9\[])|\s*\|\s*",
-        RegexOptions.CultureInvariant,
-        RegexTimeout);
-    private static readonly Regex WhitespacePattern = new(
-        @"\s+",
         RegexOptions.CultureInvariant,
         RegexTimeout);
     private static readonly Regex EvidencePattern = new(
@@ -109,8 +123,8 @@ public sealed class DeterministicRequirementDetector : IRequirementDetector
         var results = new List<DetectedRequirement>();
         foreach (var page in pages)
         {
-            var sectionText = FindSectionText(page.Text);
-            foreach (var statement in SplitStatements(page.Text))
+            var sectionText = AnalysisTextRules.FindSectionText(page.Text);
+            foreach (var statement in AnalysisTextRules.SplitStatements(page.Text))
             {
                 if (statement.Length is < 12 or > 2_000)
                 {
@@ -154,34 +168,7 @@ public sealed class DeterministicRequirementDetector : IRequirementDetector
         return results;
     }
 
-    public static string NormalizeRequirement(string value) => WhitespacePattern
-        .Replace(value, " ")
-        .Trim()
-        .TrimEnd('.', ';', ':')
-        .ToLowerInvariant();
-
-    private static IEnumerable<string> SplitStatements(string text)
-    {
-        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-        {
-            var normalizedLine = WhitespacePattern.Replace(line, " ").Trim();
-            foreach (var statement in SentenceBoundaryPattern.Split(normalizedLine))
-            {
-                var normalizedStatement = statement.Trim();
-                if (normalizedStatement.Length > 0)
-                {
-                    yield return normalizedStatement;
-                }
-            }
-        }
-    }
-
-    private static string? FindSectionText(string text)
-    {
-        var firstLine = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .FirstOrDefault();
-        return firstLine is null ? null : firstLine[..Math.Min(firstLine.Length, 200)];
-    }
+    public static string NormalizeRequirement(string value) => AnalysisTextRules.Normalize(value);
 
     private static string ClassifyCategory(string text)
     {
@@ -215,4 +202,197 @@ public sealed class DeterministicRequirementDetector : IRequirementDetector
 
     private static bool ContainsAny(string text, params string[] values) =>
         values.Any(value => text.Contains(value, StringComparison.OrdinalIgnoreCase));
+}
+
+public sealed class DeterministicAnalysisFindingDetector : IAnalysisFindingDetector
+{
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+    private static readonly Regex DatePattern = new(
+        @"\b(?<date>(?:20\d{2}[-/.](?:0?[1-9]|1[0-2])[-/.](?:0?[1-9]|[12]\d|3[01]))|(?:(?:0?[1-9]|[12]\d|3[01])\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+20\d{2})|(?:(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+(?:0?[1-9]|[12]\d|3[01])(?:st|nd|rd|th)?,?\s+20\d{2}))\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexTimeout);
+    private static readonly Regex DateContextPattern = new(
+        @"\b(deadline|due|submission|submit|questions?|clarifications?|award|contract|commencement|start|kickoff|presentation|validity|milestone|response)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexTimeout);
+    private static readonly Regex RequestedDocumentPattern = new(
+        @"\b(provide|submit|include|attach|complete|upload)\b.*\b(certificate|certification|reference|case study|proposal|schedule|plan|report|matrix|declaration|form|insurance|evidence|cv|resume|pricing|price)\b|\b(certificate|certification|reference|case study|proposal|schedule|plan|report|matrix|declaration|form|insurance|evidence|cv|resume|pricing|price)\b.*\b(required|requested|must|shall)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexTimeout);
+    private static readonly Regex EvaluationPattern = new(
+        @"\b(evaluation|criterion|criteria|weight|weighted|score|scoring|points?|quality|price|technical|methodology|presentation)\b",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant,
+        RegexTimeout);
+    private static readonly Regex WeightPattern = new(
+        @"(?<weight>100(?:\.0+)?|\d{1,2}(?:\.\d+)?)\s*%",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+
+    public string Version => "findings-en-v1";
+
+    public IReadOnlyList<DetectedFinding> Detect(IReadOnlyList<RequirementSourcePage> pages)
+    {
+        var findings = new List<DetectedFinding>();
+        foreach (var page in pages)
+        {
+            var sectionText = AnalysisTextRules.FindSectionText(page.Text);
+            foreach (var statement in AnalysisTextRules.SplitStatements(page.Text))
+            {
+                if (statement.Length is < 8 or > 2_000)
+                {
+                    continue;
+                }
+
+                var dateMatch = DatePattern.Match(statement);
+                if (dateMatch.Success && DateContextPattern.IsMatch(statement))
+                {
+                    var dateText = dateMatch.Groups["date"].Value;
+                    findings.Add(Create(
+                        "key_date",
+                        ClassifyDateTitle(statement),
+                        statement,
+                        TryParseDate(dateText),
+                        null,
+                        0.91m,
+                        page,
+                        sectionText));
+                }
+
+                if (RequestedDocumentPattern.IsMatch(statement))
+                {
+                    findings.Add(Create(
+                        "requested_document",
+                        ClassifyDocumentTitle(statement),
+                        statement,
+                        null,
+                        null,
+                        0.88m,
+                        page,
+                        sectionText));
+                }
+
+                var weightMatch = WeightPattern.Match(statement);
+                if (weightMatch.Success && EvaluationPattern.IsMatch(statement))
+                {
+                    findings.Add(Create(
+                        "evaluation_criterion",
+                        ClassifyEvaluationTitle(statement),
+                        statement,
+                        null,
+                        decimal.Parse(weightMatch.Groups["weight"].Value, CultureInfo.InvariantCulture),
+                        0.94m,
+                        page,
+                        sectionText));
+                }
+            }
+        }
+
+        return findings
+            .DistinctBy(finding => (finding.FindingType, finding.NormalizedValue, finding.AnalysisFileId, finding.PageNumber))
+            .ToArray();
+    }
+
+    private static DetectedFinding Create(
+        string findingType,
+        string title,
+        string detail,
+        DateTimeOffset? dateValue,
+        decimal? weightPercent,
+        decimal confidence,
+        RequirementSourcePage page,
+        string? sectionText) => new(
+            findingType,
+            title,
+            detail,
+            AnalysisTextRules.Normalize(detail),
+            dateValue,
+            weightPercent,
+            confidence,
+            page.AnalysisFileId,
+            page.OriginalFileName,
+            page.PageNumber,
+            sectionText,
+            detail);
+
+    private static DateTimeOffset? TryParseDate(string value)
+    {
+        var normalized = Regex.Replace(value, @"(?<=\d)(st|nd|rd|th)\b", string.Empty, RegexOptions.IgnoreCase, RegexTimeout);
+        return DateTimeOffset.TryParse(
+            normalized,
+            CultureInfo.GetCultureInfo("en-US"),
+            DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
+            out var date)
+            ? date
+            : null;
+    }
+
+    private static string ClassifyDateTitle(string value)
+    {
+        if (value.Contains("question", StringComparison.OrdinalIgnoreCase) || value.Contains("clarification", StringComparison.OrdinalIgnoreCase)) return "Questions deadline";
+        if (value.Contains("submission", StringComparison.OrdinalIgnoreCase) || value.Contains("proposal", StringComparison.OrdinalIgnoreCase) || value.Contains("response", StringComparison.OrdinalIgnoreCase)) return "Proposal deadline";
+        if (value.Contains("award", StringComparison.OrdinalIgnoreCase)) return "Expected award";
+        if (value.Contains("commencement", StringComparison.OrdinalIgnoreCase) || value.Contains("kickoff", StringComparison.OrdinalIgnoreCase) || value.Contains("start", StringComparison.OrdinalIgnoreCase)) return "Contract start";
+        return "Key procurement date";
+    }
+
+    private static string ClassifyDocumentTitle(string value)
+    {
+        if (value.Contains("certificate", StringComparison.OrdinalIgnoreCase) || value.Contains("certification", StringComparison.OrdinalIgnoreCase)) return "Certificate or certification";
+        if (value.Contains("reference", StringComparison.OrdinalIgnoreCase) || value.Contains("case study", StringComparison.OrdinalIgnoreCase)) return "Customer reference";
+        if (value.Contains("pricing", StringComparison.OrdinalIgnoreCase) || value.Contains("price", StringComparison.OrdinalIgnoreCase)) return "Pricing response";
+        if (value.Contains("plan", StringComparison.OrdinalIgnoreCase)) return "Delivery plan";
+        if (value.Contains("matrix", StringComparison.OrdinalIgnoreCase)) return "Compliance matrix";
+        return "Requested submission document";
+    }
+
+    private static string ClassifyEvaluationTitle(string value)
+    {
+        if (value.Contains("price", StringComparison.OrdinalIgnoreCase)) return "Price";
+        if (value.Contains("technical", StringComparison.OrdinalIgnoreCase)) return "Technical solution";
+        if (value.Contains("methodology", StringComparison.OrdinalIgnoreCase) || value.Contains("quality", StringComparison.OrdinalIgnoreCase)) return "Quality and methodology";
+        if (value.Contains("presentation", StringComparison.OrdinalIgnoreCase)) return "Presentation";
+        return "Evaluation criterion";
+    }
+}
+
+internal static class AnalysisTextRules
+{
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromSeconds(1);
+    private static readonly Regex SentenceBoundaryPattern = new(
+        @"(?<=[.!?;])\s+(?=[A-Z0-9\[])|\s*\|\s*",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+    private static readonly Regex WhitespacePattern = new(
+        @"\s+",
+        RegexOptions.CultureInvariant,
+        RegexTimeout);
+
+    public static IEnumerable<string> SplitStatements(string text)
+    {
+        foreach (var line in text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+        {
+            var normalizedLine = WhitespacePattern.Replace(line, " ").Trim();
+            foreach (var statement in SentenceBoundaryPattern.Split(normalizedLine))
+            {
+                var normalizedStatement = statement.Trim();
+                if (normalizedStatement.Length > 0)
+                {
+                    yield return normalizedStatement;
+                }
+            }
+        }
+    }
+
+    public static string? FindSectionText(string text)
+    {
+        var firstLine = text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .FirstOrDefault();
+        return firstLine is null ? null : firstLine[..Math.Min(firstLine.Length, 200)];
+    }
+
+    public static string Normalize(string value) => WhitespacePattern
+        .Replace(value, " ")
+        .Trim()
+        .TrimEnd('.', ';', ':')
+        .ToLowerInvariant();
 }
