@@ -102,23 +102,14 @@ internal sealed class UserAuthenticationService(
 
     private async Task RecordFailureAsync(Guid userId, CancellationToken cancellationToken)
     {
-        await using var command = dataSource.CreateCommand("""
-            update user_credentials
-            set failed_access_count = failed_access_count + 1,
-                lockout_end = case
-                    when failed_access_count + 1 >= $2 then $3
-                    else lockout_end
-                end,
-                updated_at = $1,
-                version = version + 1
-            where user_id = $4
-            """);
+        await using var command = dataSource.CreateCommand(
+            "select record_login_failure($1, $2, $3, $4)");
         var now = timeProvider.GetUtcNow();
+        command.Parameters.AddWithValue(userId);
         command.Parameters.AddWithValue(now);
         command.Parameters.AddWithValue(LockoutThreshold);
         command.Parameters.AddWithValue(now.Add(LockoutDuration));
-        command.Parameters.AddWithValue(userId);
-        await command.ExecuteNonQueryAsync(cancellationToken);
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private async Task RecordSuccessAsync(
@@ -126,43 +117,13 @@ internal sealed class UserAuthenticationService(
         string? replacementHash,
         CancellationToken cancellationToken)
     {
-        await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
-        await using var transaction = await connection.BeginTransactionAsync(cancellationToken);
         var now = timeProvider.GetUtcNow();
-
-        await using (var credentialCommand = connection.CreateCommand())
-        {
-            credentialCommand.Transaction = transaction;
-            credentialCommand.CommandText = """
-                update user_credentials
-                set failed_access_count = 0,
-                    lockout_end = null,
-                    password_hash = coalesce($1, password_hash),
-                    updated_at = $2,
-                    version = version + 1
-                where user_id = $3
-                """;
-            credentialCommand.Parameters.AddWithValue((object?)replacementHash ?? DBNull.Value);
-            credentialCommand.Parameters.AddWithValue(now);
-            credentialCommand.Parameters.AddWithValue(userId);
-            await credentialCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await using (var userCommand = connection.CreateCommand())
-        {
-            userCommand.Transaction = transaction;
-            userCommand.CommandText = """
-                update users
-                set last_login_at = $1,
-                    updated_at = $1
-                where id = $2
-                """;
-            userCommand.Parameters.AddWithValue(now);
-            userCommand.Parameters.AddWithValue(userId);
-            await userCommand.ExecuteNonQueryAsync(cancellationToken);
-        }
-
-        await transaction.CommitAsync(cancellationToken);
+        await using var command = dataSource.CreateCommand(
+            "select record_login_success($1, $2, $3)");
+        command.Parameters.AddWithValue(userId);
+        command.Parameters.AddWithValue((object?)replacementHash ?? DBNull.Value);
+        command.Parameters.AddWithValue(now);
+        await command.ExecuteScalarAsync(cancellationToken);
     }
 
     private sealed record MembershipPayload(Guid OrganizationId, string Role);

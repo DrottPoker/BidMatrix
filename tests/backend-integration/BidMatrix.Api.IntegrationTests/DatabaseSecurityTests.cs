@@ -10,20 +10,170 @@ public sealed class DatabaseSecurityTests(DatabaseFixture database)
     {
         await using var connection = await database.MigrationDataSource.OpenConnectionAsync();
 
-        Assert.Equal(9, await CountAsync(connection, "select count(*) from schema_migrations"));
+        Assert.Equal(17, await CountAsync(connection, "select count(*) from schema_migrations"));
         Assert.Equal(4, await CountAsync(connection, "select count(*) from agent_definitions"));
         Assert.Equal(4, await CountAsync(connection, "select count(*) from agent_versions"));
         Assert.Equal(6, await CountAsync(connection, "select count(*) from system_controls"));
         Assert.Equal(1, await CountAsync(
             connection,
             "select count(*) from user_platform_roles where role = 'platform_owner'"));
-        Assert.Equal(19, await CountAsync(
+        Assert.Equal(22, await CountAsync(
             connection,
-            "select count(*) from pg_class where relrowsecurity and relname in ('organizations','organization_memberships','analyses','analysis_files','analysis_pages','analysis_requirements','analysis_citations','analysis_findings','company_profiles','evidence_items','requirement_evidence_matches','tasks','task_dependencies','artifacts','tool_calls','approvals','workflow_runs','agent_runs','engineering_sandboxes')"));
+            "select count(*) from pg_class where relrowsecurity and relname in ('organizations','organization_memberships','analyses','analysis_files','analysis_pages','analysis_requirements','analysis_citations','analysis_findings','company_profiles','evidence_items','requirement_evidence_matches','tasks','task_dependencies','artifacts','tool_calls','approvals','workflow_runs','agent_runs','engineering_sandboxes','user_sessions','account_recovery_tokens','user_federated_identities')"));
     }
 
     [Fact]
-    public async Task ApplicationAndAuditRolesAreRestrictedAndDoNotOwnDatabase()
+    public async Task BetterAuthRoleIsIsolatedFromBidMatrixAuthorityAndRegistrationFunctions()
+    {
+        await using var connection = await database.MigrationDataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                has_schema_privilege($1, 'better_auth', 'usage'),
+                has_table_privilege($1, 'better_auth."user"', 'select'),
+                has_table_privilege($1, 'better_auth."session"', 'insert'),
+                has_table_privilege($1, 'better_auth."rateLimit"', 'update'),
+                has_function_privilege(
+                    $1,
+                    'public.revoke_bidmatrix_sessions_after_managed_password_update()',
+                    'execute'),
+                has_table_privilege($1, 'users', 'select'),
+                has_table_privilege($1, 'organization_memberships', 'select'),
+                to_regprocedure('public.inspect_tenant_owner_invitation(text, timestamptz)') is null,
+                has_function_privilege(
+                    $1,
+                    'register_federated_account(uuid, uuid, uuid, uuid, text, text, text, text, text, text, text, text, uuid, timestamptz, text)',
+                    'execute')
+            """;
+        command.Parameters.AddWithValue(database.Options.AuthUser);
+
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.True(reader.GetBoolean(0));
+        Assert.True(reader.GetBoolean(1));
+        Assert.True(reader.GetBoolean(2));
+        Assert.True(reader.GetBoolean(3));
+        Assert.False(reader.GetBoolean(4));
+        Assert.False(reader.GetBoolean(5));
+        Assert.False(reader.GetBoolean(6));
+        Assert.True(reader.GetBoolean(7));
+        Assert.False(reader.GetBoolean(8));
+    }
+
+    [Fact]
+    public async Task ManagedPasswordUpdateRevokesMappedBidMatrixSessionsTransactionally()
+    {
+        var userId = Guid.CreateVersion7();
+        var identityId = Guid.CreateVersion7();
+        var sessionId = Guid.CreateVersion7();
+        var authUserId = $"auth-{Guid.NewGuid():N}";
+        var issuer = "https://auth.example.test/api/auth";
+        var subjectHash = Convert.ToHexStringLower(
+            System.Security.Cryptography.SHA256.HashData(
+                System.Text.Encoding.UTF8.GetBytes($"{issuer}\n{authUserId}")));
+        var email = $"managed-reset-{userId:N}@example.invalid";
+
+        await using (var connection = await database.MigrationDataSource.OpenConnectionAsync())
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = """
+                with inserted_user as (
+                    insert into users (
+                        id, email, normalized_email, display_name, status, created_at, updated_at
+                    )
+                    values ($1, $2, upper($2), 'Managed Reset Test', 'active', now(), now())
+                    returning id
+                ), inserted_credential as (
+                    insert into user_credentials (
+                        user_id, password_hash, security_stamp, password_changed_at,
+                        created_at, updated_at, version
+                    )
+                    select id, 'disabled-managed-password-hash', $3, now(), now(), now(), 1
+                    from inserted_user
+                    returning user_id
+                ), inserted_identity as (
+                    insert into user_federated_identities (
+                        id, user_id, provider_name, issuer, subject_hash, email_at_link,
+                        status, linked_at, updated_at, version
+                    )
+                    select $4, user_id, 'Better Auth', $5, $6, $2, 'active', now(), now(), 1
+                    from inserted_credential
+                    returning user_id
+                ), inserted_session as (
+                    insert into user_sessions (
+                        id, user_id, token_hash, created_at, last_seen_at,
+                        absolute_expires_at, version
+                    )
+                    select $7, user_id, $8, now(), now(), now() + interval '8 hours', 1
+                    from inserted_identity
+                    returning user_id
+                ), inserted_auth_user as (
+                    insert into better_auth."user" (
+                        "id", "name", "email", "emailVerified", "createdAt", "updatedAt"
+                    )
+                    select $9, 'Managed Reset Test', $2, true, now(), now()
+                    from inserted_session
+                    returning "id"
+                )
+                insert into better_auth."account" (
+                    "id", "issuer", "accountId", "providerId", "userId",
+                    "password", "createdAt", "updatedAt"
+                )
+                select $10, 'credential', "id", 'credential', "id", 'old-hash', now(), now()
+                from inserted_auth_user
+                """;
+            command.Parameters.AddWithValue(userId);
+            command.Parameters.AddWithValue(email);
+            command.Parameters.AddWithValue(Guid.CreateVersion7());
+            command.Parameters.AddWithValue(identityId);
+            command.Parameters.AddWithValue(issuer);
+            command.Parameters.AddWithValue(subjectHash);
+            command.Parameters.AddWithValue(sessionId);
+            command.Parameters.AddWithValue(new string('a', 64));
+            command.Parameters.AddWithValue(authUserId);
+            command.Parameters.AddWithValue($"account-{Guid.NewGuid():N}");
+            await command.ExecuteNonQueryAsync();
+        }
+
+        await using (var authDataSource = NpgsqlDataSource.Create(database.Options.BuildAuthConnectionString()))
+        await using (var authConnection = await authDataSource.OpenConnectionAsync())
+        await using (var update = authConnection.CreateCommand())
+        {
+            update.CommandText = """
+                update better_auth."account"
+                set "password" = 'new-hash', "updatedAt" = now()
+                where "userId" = $1 and "providerId" = 'credential'
+                """;
+            update.Parameters.AddWithValue(authUserId);
+            Assert.Equal(1, await update.ExecuteNonQueryAsync());
+        }
+
+        await using var verificationConnection = await database.MigrationDataSource.OpenConnectionAsync();
+        await using var verification = verificationConnection.CreateCommand();
+        verification.CommandText = """
+            select
+                session_record.revoked_reason,
+                credential.version,
+                audit.action,
+                audit.metadata ->> 'revokedSessionCount'
+            from user_sessions session_record
+            join user_credentials credential on credential.user_id = session_record.user_id
+            join audit_events audit
+              on audit.action = 'identity.managed_password.reset'
+             and audit.target_id = session_record.user_id::text
+            where session_record.id = $1
+            """;
+        verification.Parameters.AddWithValue(sessionId);
+        await using var reader = await verification.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        Assert.Equal("managed_password_reset", reader.GetString(0));
+        Assert.Equal(2, reader.GetInt32(1));
+        Assert.Equal("identity.managed_password.reset", reader.GetString(2));
+        Assert.Equal("1", reader.GetString(3));
+    }
+
+    [Fact]
+    public async Task ApplicationAuditAndAuthRolesAreRestrictedAndDoNotOwnDatabase()
     {
         await using var connection = await database.MigrationDataSource.OpenConnectionAsync();
         await using var command = connection.CreateCommand();
@@ -33,14 +183,19 @@ public sealed class DatabaseSecurityTests(DatabaseFixture database)
                 app.rolsuper as app_superuser,
                 app.rolbypassrls as app_bypass_rls,
                 audit.rolsuper as audit_superuser,
-                audit.rolbypassrls as audit_bypass_rls
+                audit.rolbypassrls as audit_bypass_rls,
+                auth.rolsuper as auth_superuser,
+                auth.rolbypassrls as auth_bypass_rls,
+                auth.rolinherit as auth_inherits
             from pg_database database
             join pg_roles app on app.rolname = $1
             join pg_roles audit on audit.rolname = $2
+            join pg_roles auth on auth.rolname = $3
             where database.datname = current_database()
             """;
         command.Parameters.AddWithValue(database.Options.User);
         command.Parameters.AddWithValue(database.Options.AuditUser);
+        command.Parameters.AddWithValue(database.Options.AuthUser);
 
         await using var reader = await command.ExecuteReaderAsync();
         Assert.True(await reader.ReadAsync());
@@ -49,6 +204,34 @@ public sealed class DatabaseSecurityTests(DatabaseFixture database)
         Assert.False(reader.GetBoolean(2));
         Assert.False(reader.GetBoolean(3));
         Assert.False(reader.GetBoolean(4));
+        Assert.False(reader.GetBoolean(5));
+        Assert.False(reader.GetBoolean(6));
+        Assert.False(reader.GetBoolean(7));
+    }
+
+    [Fact]
+    public async Task ApplicationRoleCannotReadIdentitySecretTablesDirectly()
+    {
+        await using var connection = await database.MigrationDataSource.OpenConnectionAsync();
+        await using var command = connection.CreateCommand();
+        command.CommandText = """
+            select
+                has_table_privilege($1, 'user_credentials', 'select'),
+                has_table_privilege($1, 'user_sessions', 'select'),
+                has_table_privilege($1, 'account_recovery_tokens', 'select'),
+                has_table_privilege($1, 'user_federated_identities', 'select'),
+                has_table_privilege($1, 'user_credentials', 'update'),
+                has_table_privilege($1, 'user_sessions', 'update'),
+                has_table_privilege($1, 'account_recovery_tokens', 'update'),
+                has_table_privilege($1, 'user_federated_identities', 'update')
+            """;
+        command.Parameters.AddWithValue(database.Options.User);
+        await using var reader = await command.ExecuteReaderAsync();
+        Assert.True(await reader.ReadAsync());
+        for (var index = 0; index < reader.FieldCount; index++)
+        {
+            Assert.False(reader.GetBoolean(index));
+        }
     }
 
     [Fact]

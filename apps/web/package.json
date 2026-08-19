@@ -5,6 +5,11 @@
   "scripts": {
     "dev": "next dev --hostname 0.0.0.0",
     "build": "next build",
+    "auth:schema": "tsx scripts/generate-auth-schema.ts",
+    "auth:schema:check": "tsx scripts/generate-auth-schema.ts --check",
+    "auth:bootstrap-client": "tsx scripts/bootstrap-oidc-client.ts",
+    "auth:bootstrap-owner": "tsx scripts/bootstrap-auth-owner.ts",
+    "auth:rotate-signing-key": "tsx scripts/rotate-auth-signing-key.ts",
     "start": "next start --hostname 0.0.0.0",
     "lint": "eslint . --max-warnings=0",
     "typecheck": "next typegen && tsc --noEmit",
@@ -12,10 +17,14 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@better-auth/oauth-provider": "1.7.0-rc.5",
+    "better-auth": "1.7.0-rc.5",
     "lucide-react": "1.25.0",
-    "next": "16.2.9",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
+    "next": "16.3.0",
+    "nodemailer": "9.0.5",
+    "pg": "8.23.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
@@ -23,21 +32,24 @@
     "@testing-library/jest-dom": "6.9.1",
     "@testing-library/react": "16.3.2",
     "@types/node": "20.19.43",
-    "@types/react": "19.2.17",
-    "@types/react-dom": "19.2.3",
+    "@types/nodemailer": "8.0.1",
+    "@types/pg": "^8.21.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "6.0.3",
     "eslint": "9.39.5",
-    "eslint-config-next": "16.2.9",
+    "eslint-config-next": "16.3.0",
     "jsdom": "29.1.1",
     "tailwindcss": "4.3.3",
+    "tsx": "4.23.12",
     "typescript": "5.9.3",
     "vitest": "4.1.10"
   },
   "overrides": {
-    "postcss": "8.5.10"
+    "postcss": "8.5.26"
   },
   "allowScripts": {
-    "sharp@0.34.5": true,
+    "sharp@0.35.3": true,
     "unrs-resolver@1.12.2": true
   }
 }

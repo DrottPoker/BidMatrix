@@ -61,10 +61,20 @@ public static class IdentityEndpoints
     private static async Task<IResult> LoginAsync(
         [FromBody] LoginRequest request,
         IUserAuthenticationService authenticationService,
+        IUserSessionService sessionService,
+        ManagedOidcOptions managedOidcOptions,
         HttpContext context,
         TimeProvider timeProvider,
         CancellationToken cancellationToken)
     {
+        if (!managedOidcOptions.NativeLoginEnabled)
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status404NotFound,
+                title: "native_login_disabled",
+                detail: "Native login is not enabled.");
+        }
+
         if (string.IsNullOrWhiteSpace(request.Email) ||
             request.Email.Length > 320 ||
             string.IsNullOrEmpty(request.Password) ||
@@ -89,24 +99,48 @@ public static class IdentityEndpoints
                 detail: "The email or password is invalid.");
         }
 
-        var principal = CreatePrincipal(attempt.User, timeProvider.GetUtcNow());
+        var authenticatedAt = timeProvider.GetUtcNow();
+        var session = await sessionService.CreateAsync(
+            attempt.User.UserId,
+            context.TraceIdentifier,
+            cancellationToken);
+        var principal = BidMatrixPrincipalFactory.Create(attempt.User, session, authenticatedAt);
         await context.SignInAsync(
             BidMatrixAuthenticationSchemes.Cookie,
             principal,
             new AuthenticationProperties
             {
                 IsPersistent = false,
-                AllowRefresh = true,
-                IssuedUtc = timeProvider.GetUtcNow(),
+                AllowRefresh = false,
+                IssuedUtc = authenticatedAt,
+                ExpiresUtc = session.AbsoluteExpiresAt,
             });
 
         return Results.Ok(CreateCurrentUserResponse(principal));
     }
 
-    private static async Task<IResult> LogoutAsync(HttpContext context)
+    private static async Task<IResult> LogoutAsync(
+        HttpContext context,
+        IUserSessionService sessionService,
+        CancellationToken cancellationToken)
     {
+        var userIdValue = context.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var sessionIdValue = context.User.FindFirstValue(BidMatrixClaimTypes.SessionId);
+        if (!Guid.TryParse(userIdValue, out var userId) || !Guid.TryParse(sessionIdValue, out var sessionId))
+        {
+            return Results.Problem(
+                statusCode: StatusCodes.Status401Unauthorized,
+                title: "Invalid session");
+        }
+
+        await sessionService.RevokeAsync(
+            sessionId,
+            userId,
+            "logout",
+            context.TraceIdentifier,
+            cancellationToken);
         await context.SignOutAsync(BidMatrixAuthenticationSchemes.Cookie);
-        return Results.NoContent();
+        return Results.Ok(new LogoutResponse(true));
     }
 
     private static IResult GetCurrentUser(ClaimsPrincipal principal) =>
@@ -122,35 +156,6 @@ public static class IdentityEndpoints
                 statusCode: StatusCodes.Status403Forbidden,
                 title: "Organization context is unavailable")
             : Results.Ok(new CurrentOrganizationResponse(organizationId, organizationRole));
-    }
-
-    private static ClaimsPrincipal CreatePrincipal(AuthenticatedUser user, DateTimeOffset authenticatedAt)
-    {
-        var claims = new List<Claim>
-        {
-            new(ClaimTypes.NameIdentifier, user.UserId.ToString()),
-            new(ClaimTypes.Email, user.Email),
-            new(ClaimTypes.Name, user.DisplayName ?? user.Email),
-            new(BidMatrixClaimTypes.SecurityStamp, user.SecurityStamp.ToString()),
-            new(BidMatrixClaimTypes.AuthenticationTime, authenticatedAt.ToUnixTimeSeconds().ToString()),
-        };
-
-        foreach (var membership in user.Memberships)
-        {
-            claims.Add(new Claim(
-                BidMatrixClaimTypes.Membership,
-                $"{membership.OrganizationId}|{membership.Role}"));
-        }
-
-        if (user.Memberships.FirstOrDefault() is { } currentMembership)
-        {
-            claims.Add(new Claim(BidMatrixClaimTypes.OrganizationId, currentMembership.OrganizationId.ToString()));
-            claims.Add(new Claim(BidMatrixClaimTypes.OrganizationRole, currentMembership.Role));
-        }
-
-        claims.AddRange(user.PlatformRoles.Select(role => new Claim(ClaimTypes.Role, role)));
-
-        return new ClaimsPrincipal(new ClaimsIdentity(claims, BidMatrixAuthenticationSchemes.Cookie));
     }
 
     private static CurrentUserResponse CreateCurrentUserResponse(ClaimsPrincipal principal)

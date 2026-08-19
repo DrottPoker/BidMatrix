@@ -3,7 +3,9 @@ using System.Text.Json;
 using BidMatrix.Application.Agents;
 using BidMatrix.Application.Audit;
 using BidMatrix.Application.Tools;
+using BidMatrix.Infrastructure.Persistence;
 using BidMatrix.Infrastructure.Tools;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace BidMatrix.Infrastructure.Agents;
@@ -11,7 +13,8 @@ namespace BidMatrix.Infrastructure.Agents;
 public sealed class PostgresAgentRuntimeService(
     NpgsqlDataSource dataSource,
     IAuditWriter auditWriter,
-    TimeProvider timeProvider) : IAgentRuntimeService
+    TimeProvider timeProvider,
+    ILogger<PostgresAgentRuntimeService> logger) : IAgentRuntimeService
 {
     private static readonly HashSet<string> AgentKeys = new(StringComparer.Ordinal)
     {
@@ -145,7 +148,7 @@ public sealed class PostgresAgentRuntimeService(
         return result;
     }
 
-    public async Task<AgentTaskPreparation> PrepareAsync(
+    public Task<AgentTaskPreparation> PrepareAsync(
         Guid organizationId,
         Guid taskId,
         string workflowId,
@@ -156,6 +159,34 @@ public sealed class PostgresAgentRuntimeService(
     {
         ValidatePreparation(organizationId, taskId, workflowId, correlationId, runtimeMode, modelName);
         var now = timeProvider.GetUtcNow();
+
+        return PostgresConcurrencyRetry.ExecuteAsync(
+            retryCancellationToken => PrepareTransactionAsync(
+                organizationId,
+                taskId,
+                workflowId,
+                correlationId,
+                modelName,
+                now,
+                retryCancellationToken),
+            (attempt, delayMilliseconds, sqlState) => logger.LogWarning(
+                "Retrying agent preparation after PostgreSQL concurrency conflict {SqlState}. Attempt {Attempt} of {MaxAttempts} after {DelayMilliseconds} ms.",
+                sqlState,
+                attempt,
+                PostgresConcurrencyRetry.MaxAttempts,
+                delayMilliseconds),
+            cancellationToken);
+    }
+
+    private async Task<AgentTaskPreparation> PrepareTransactionAsync(
+        Guid organizationId,
+        Guid taskId,
+        string workflowId,
+        string correlationId,
+        string modelName,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.Serializable,

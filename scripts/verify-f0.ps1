@@ -2,11 +2,28 @@ param(
     [string]$ApiBaseUrl = "http://localhost:8080",
     [string]$OwnerEmail = "owner@example.invalid",
     [string]$OwnerPassword = "change-me-local-owner-password",
-    [int]$TimeoutSeconds = 120
+    [int]$TimeoutSeconds = 120,
+    [string]$ComposeProjectName = "bidmatrix",
+    [string]$EnvFile = ".env"
 )
 
 $ErrorActionPreference = "Stop"
 Add-Type -AssemblyName System.Net.Http
+$repoRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+$composeFile = Join-Path $repoRoot "compose.yaml"
+$resolvedEnvFile = if ([IO.Path]::IsPathRooted($EnvFile)) {
+    [IO.Path]::GetFullPath($EnvFile)
+} else {
+    [IO.Path]::GetFullPath((Join-Path $repoRoot $EnvFile))
+}
+
+if ($ComposeProjectName -notmatch '^[a-z0-9][a-z0-9_-]*$') {
+    throw "ComposeProjectName contains unsupported characters."
+}
+if (-not (Test-Path -LiteralPath $resolvedEnvFile -PathType Leaf)) {
+    throw "The Compose environment file does not exist: $resolvedEnvFile"
+}
+
 $handler = [System.Net.Http.HttpClientHandler]::new()
 $handler.UseCookies = $true
 $client = [System.Net.Http.HttpClient]::new($handler)
@@ -60,6 +77,32 @@ function Send-ApiJson {
     finally {
         $request.Dispose()
     }
+}
+
+function Invoke-PostgresScalar {
+    param([string]$Query)
+
+    $encodedQuery = [Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($Query))
+    $arguments = @(
+        "compose",
+        "--project-name", $ComposeProjectName,
+        "--project-directory", $repoRoot,
+        "--file", $composeFile,
+        "--env-file", $resolvedEnvFile,
+        "exec", "-T",
+        "-e", "SQL_BASE64=$encodedQuery",
+        "postgres",
+        "sh", "-ec",
+        'printf "%s" "$SQL_BASE64" | base64 -d | PGPASSWORD="$POSTGRES_PASSWORD" psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Atq'
+    )
+    $output = & docker @arguments 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "PostgreSQL verification failed: $($output -join [Environment]::NewLine)"
+    }
+
+    $lines = @($output | ForEach-Object { $_.ToString().Trim() } | Where-Object { $_ })
+    if ($lines.Count -eq 0) { return "" }
+    return $lines[-1]
 }
 
 try {
@@ -125,7 +168,7 @@ try {
     }
 
     $requirements = Get-ApiJson "/v1/analyses/$($analysis.id)/requirements"
-    if ($requirements.capabilityStatus -ne "requiresReview" -or $requirements.extractionStatus -ne "succeeded") {
+    if ($requirements.capabilityStatus -ne "qualityReview" -or $requirements.extractionStatus -ne "succeeded") {
         throw "F1 extraction did not complete in a manually reviewed state."
     }
     if ($requirements.metrics.requirementCount -lt 2 -or
@@ -143,7 +186,7 @@ try {
     }
 
     $engineeringTaskId = ($demoTasks | Where-Object agentKey -eq "engineering").taskId
-    $engineeringSandboxCount = docker exec bidmatrix-postgres-1 psql -U bidmatrix_admin -d bidmatrix -Atc "select count(*) from engineering_sandboxes where task_id='$engineeringTaskId'"
+    $engineeringSandboxCount = Invoke-PostgresScalar "select count(*) from engineering_sandboxes where task_id='$engineeringTaskId'"
     if ($engineeringSandboxCount -ne "1") {
         throw "The engineering demonstration did not persist its isolated sandbox."
     }

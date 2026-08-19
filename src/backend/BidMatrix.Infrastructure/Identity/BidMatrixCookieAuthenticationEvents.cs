@@ -1,12 +1,15 @@
 using System.Security.Claims;
+using BidMatrix.Application.Identity;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Http;
-using Npgsql;
 
 namespace BidMatrix.Infrastructure.Identity;
 
-public sealed class BidMatrixCookieAuthenticationEvents(NpgsqlDataSource dataSource) : CookieAuthenticationEvents
+public sealed class BidMatrixCookieAuthenticationEvents(
+    IUserSessionService sessionService,
+    IFederatedIdentityService federatedIdentityService,
+    ManagedOidcOptions managedOidcOptions) : CookieAuthenticationEvents
 {
     public override Task RedirectToLogin(RedirectContext<CookieAuthenticationOptions> context)
     {
@@ -24,27 +27,49 @@ public sealed class BidMatrixCookieAuthenticationEvents(NpgsqlDataSource dataSou
     {
         var userIdValue = context.Principal?.FindFirstValue(ClaimTypes.NameIdentifier);
         var securityStampValue = context.Principal?.FindFirstValue(BidMatrixClaimTypes.SecurityStamp);
+        var sessionIdValue = context.Principal?.FindFirstValue(BidMatrixClaimTypes.SessionId);
+        var sessionToken = context.Principal?.FindFirstValue(BidMatrixClaimTypes.SessionToken);
+        var authenticationMethod = context.Principal?.FindFirstValue(BidMatrixClaimTypes.AuthenticationMethod);
 
-        if (!Guid.TryParse(userIdValue, out var userId) || !Guid.TryParse(securityStampValue, out var securityStamp))
+        if (!Guid.TryParse(userIdValue, out var userId) ||
+            !Guid.TryParse(securityStampValue, out var securityStamp) ||
+            !Guid.TryParse(sessionIdValue, out var sessionId) ||
+            string.IsNullOrEmpty(sessionToken) ||
+            authenticationMethod is not (BidMatrixAuthenticationMethods.Password or BidMatrixAuthenticationMethods.Oidc))
         {
             await RejectAsync(context);
             return;
         }
 
-        await using var command = dataSource.CreateCommand("""
-            select credential.security_stamp, user_record.status
-            from user_credentials credential
-            join users user_record on user_record.id = credential.user_id
-            where credential.user_id = $1
-            """);
-        command.Parameters.AddWithValue(userId);
-        await using var reader = await command.ExecuteReaderAsync(context.HttpContext.RequestAborted);
-
-        if (!await reader.ReadAsync(context.HttpContext.RequestAborted) ||
-            reader.GetGuid(0) != securityStamp ||
-            !string.Equals(reader.GetString(1), "active", StringComparison.Ordinal))
+        var validation = await sessionService.ValidateAsync(
+            userId,
+            sessionToken,
+            securityStamp,
+            context.HttpContext.RequestAborted);
+        if (!validation.IsValid || validation.SessionId != sessionId)
         {
             await RejectAsync(context);
+            return;
+        }
+
+        if (authenticationMethod == BidMatrixAuthenticationMethods.Password &&
+            !managedOidcOptions.NativeLoginEnabled)
+        {
+            await RejectAsync(context);
+            return;
+        }
+
+        if (authenticationMethod == BidMatrixAuthenticationMethods.Oidc)
+        {
+            var federatedIdentityIdValue = context.Principal?.FindFirstValue(BidMatrixClaimTypes.FederatedIdentityId);
+            if (!Guid.TryParse(federatedIdentityIdValue, out var federatedIdentityId) ||
+                !await federatedIdentityService.ValidateAsync(
+                    federatedIdentityId,
+                    userId,
+                    context.HttpContext.RequestAborted))
+            {
+                await RejectAsync(context);
+            }
         }
     }
 
@@ -58,14 +83,21 @@ public sealed class BidMatrixCookieAuthenticationEvents(NpgsqlDataSource dataSou
 public static class BidMatrixClaimTypes
 {
     public const string SecurityStamp = "bidmatrix:security_stamp";
+    public const string SessionId = "bidmatrix:session_id";
+    public const string SessionToken = "bidmatrix:session_token";
     public const string OrganizationId = "bidmatrix:organization_id";
     public const string OrganizationRole = "bidmatrix:organization_role";
     public const string Membership = "bidmatrix:membership";
     public const string AuthenticationTime = "auth_time";
+    public const string AuthenticationMethod = "bidmatrix:authentication_method";
+    public const string FederatedIdentityId = "bidmatrix:federated_identity_id";
+    public const string IdentityProvider = "bidmatrix:identity_provider";
 }
 
 public static class BidMatrixAuthenticationSchemes
 {
     public const string Cookie = "BidMatrixCookie";
+    public const string ExternalCookie = "BidMatrixExternalCookie";
+    public const string OpenIdConnect = "BidMatrixOpenIdConnect";
     public const string InternalService = "BidMatrixInternalService";
 }

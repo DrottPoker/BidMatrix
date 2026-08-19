@@ -3,7 +3,9 @@ using System.Text.Json;
 using BidMatrix.Application.Audit;
 using BidMatrix.Application.Engineering;
 using BidMatrix.Application.Tools;
+using BidMatrix.Infrastructure.Persistence;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Npgsql;
 
 namespace BidMatrix.Infrastructure.Tools;
@@ -14,7 +16,8 @@ public sealed class PostgresToolGatewayService(
     IAuditWriter auditWriter,
     IEngineeringSandboxService engineeringSandbox,
     IHostEnvironment environment,
-    TimeProvider timeProvider) : IToolGatewayService
+    TimeProvider timeProvider,
+    ILogger<PostgresToolGatewayService> logger) : IToolGatewayService
 {
     public async Task<ToolGatewayResult> ExecuteAsync(
         ToolGatewayRequest request,
@@ -27,7 +30,58 @@ public sealed class PostgresToolGatewayService(
         var inputHash = CanonicalJson.HashNormalized(normalizedInput);
         var now = timeProvider.GetUtcNow();
 
+        var result = await PostgresConcurrencyRetry.ExecuteAsync(
+            retryCancellationToken => ExecuteTransactionAsync(
+                request,
+                normalizedInput,
+                inputHash,
+                now,
+                retryCancellationToken),
+            (attempt, delayMilliseconds, sqlState) => logger.LogWarning(
+                "Retrying Tool Gateway transaction after PostgreSQL concurrency conflict {SqlState}. Attempt {Attempt} of {MaxAttempts} after {DelayMilliseconds} ms.",
+                sqlState,
+                attempt,
+                PostgresConcurrencyRetry.MaxAttempts,
+                delayMilliseconds),
+            cancellationToken);
+        await AuditDecisionAsync(request, result, now, cancellationToken);
+        return result;
+    }
+
+    private async Task<ToolGatewayResult> ExecuteTransactionAsync(
+        ToolGatewayRequest request,
+        string normalizedInput,
+        string inputHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         await using var connection = await dataSource.OpenConnectionAsync(cancellationToken);
+        var lockName = $"bidmatrix:tool-gateway:{request.OrganizationId:N}:{request.ToolKey}";
+        await AcquireToolGatewayLockAsync(connection, lockName, cancellationToken);
+        try
+        {
+            return await ExecuteLockedTransactionAsync(
+                connection,
+                request,
+                normalizedInput,
+                inputHash,
+                now,
+                cancellationToken);
+        }
+        finally
+        {
+            await ReleaseToolGatewayLockAsync(connection, lockName);
+        }
+    }
+
+    private async Task<ToolGatewayResult> ExecuteLockedTransactionAsync(
+        NpgsqlConnection connection,
+        ToolGatewayRequest request,
+        string normalizedInput,
+        string inputHash,
+        DateTimeOffset now,
+        CancellationToken cancellationToken)
+    {
         await using var transaction = await connection.BeginTransactionAsync(
             IsolationLevel.Serializable,
             cancellationToken);
@@ -82,7 +136,6 @@ public sealed class PostgresToolGatewayService(
                 inputHash,
                 existing.ExecutionStatus,
                 existing.Output);
-            await AuditDecisionAsync(request, replay, now, cancellationToken);
             return replay;
         }
 
@@ -202,8 +255,39 @@ public sealed class PostgresToolGatewayService(
             inputHash,
             executionStatus,
             output);
-        await AuditDecisionAsync(request, result, now, cancellationToken);
         return result;
+    }
+
+    private static async Task AcquireToolGatewayLockAsync(
+        NpgsqlConnection connection,
+        string lockName,
+        CancellationToken cancellationToken)
+    {
+        await using var command = connection.CreateCommand();
+        command.CommandText = "select pg_advisory_lock(hashtextextended($1, 49089055))";
+        command.Parameters.AddWithValue(lockName);
+        await command.ExecuteNonQueryAsync(cancellationToken);
+    }
+
+    private async Task ReleaseToolGatewayLockAsync(
+        NpgsqlConnection connection,
+        string lockName)
+    {
+        try
+        {
+            await using var command = connection.CreateCommand();
+            command.CommandText = "select pg_advisory_unlock(hashtextextended($1, 49089055))";
+            command.Parameters.AddWithValue(lockName);
+            if (await command.ExecuteScalarAsync(CancellationToken.None) is not true)
+            {
+                logger.LogError("The Tool Gateway PostgreSQL advisory lock was not held during release.");
+            }
+        }
+        catch (NpgsqlException exception)
+        {
+            logger.LogError(exception, "The Tool Gateway PostgreSQL advisory lock could not be released.");
+            await connection.CloseAsync();
+        }
     }
 
     private async Task<ToolExecution> ExecuteAllowedToolAsync(

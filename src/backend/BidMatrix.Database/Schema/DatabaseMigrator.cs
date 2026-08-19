@@ -100,10 +100,12 @@ public sealed class DatabaseMigrator(BidMatrixDataSourceOptions options)
         var commandBuilder = new NpgsqlCommandBuilder();
         var appRole = commandBuilder.QuoteIdentifier(options.User);
         var auditRole = commandBuilder.QuoteIdentifier(options.AuditUser);
+        var authRole = commandBuilder.QuoteIdentifier(options.AuthUser);
 
         return sql
             .Replace("{{APP_ROLE}}", appRole, StringComparison.Ordinal)
-            .Replace("{{AUDIT_ROLE}}", auditRole, StringComparison.Ordinal);
+            .Replace("{{AUDIT_ROLE}}", auditRole, StringComparison.Ordinal)
+            .Replace("{{AUTH_ROLE}}", authRole, StringComparison.Ordinal);
     }
 
     private static async Task<bool> MigrationAppliedAsync(

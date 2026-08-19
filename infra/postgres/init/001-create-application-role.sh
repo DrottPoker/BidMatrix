@@ -7,7 +7,9 @@ psql \
   --set=app_user="$POSTGRES_APP_USER" \
   --set=app_password="$POSTGRES_APP_PASSWORD" \
   --set=audit_user="$POSTGRES_AUDIT_USER" \
-  --set=audit_password="$POSTGRES_AUDIT_PASSWORD" <<'SQL'
+  --set=audit_password="$POSTGRES_AUDIT_PASSWORD" \
+  --set=auth_user="$POSTGRES_AUTH_USER" \
+  --set=auth_password="$POSTGRES_AUTH_PASSWORD" <<'SQL'
 select format('create role %I login password %L', :'app_user', :'app_password')
 where not exists (select 1 from pg_roles where rolname = :'app_user')
 \gexec
@@ -16,15 +18,25 @@ select format('create role %I login password %L', :'audit_user', :'audit_passwor
 where not exists (select 1 from pg_roles where rolname = :'audit_user')
 \gexec
 
+select format('create role %I login password %L', :'auth_user', :'auth_password')
+where not exists (select 1 from pg_roles where rolname = :'auth_user')
+\gexec
+
 select format('alter role %I nosuperuser nocreatedb nocreaterole noinherit nobypassrls', :'app_user')
 \gexec
 
 select format('alter role %I nosuperuser nocreatedb nocreaterole noinherit nobypassrls', :'audit_user')
 \gexec
 
+select format('alter role %I nosuperuser nocreatedb nocreaterole noinherit nobypassrls', :'auth_user')
+\gexec
+
 select format('grant connect on database %I to %I', current_database(), :'app_user')
 \gexec
 
 select format('grant connect on database %I to %I', current_database(), :'audit_user')
+\gexec
+
+select format('grant connect on database %I to %I', current_database(), :'auth_user')
 \gexec
 SQL

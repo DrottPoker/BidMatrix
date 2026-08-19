@@ -5,7 +5,9 @@ namespace BidMatrix.Database.Schema;
 
 public sealed class PostgresHealthCheck(NpgsqlDataSource dataSource) : IHealthCheck
 {
-    public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
+    public async Task<HealthCheckResult> CheckHealthAsync(
+        HealthCheckContext context,
+        CancellationToken cancellationToken = default)
     {
         try
         {

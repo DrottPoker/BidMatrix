@@ -530,13 +530,13 @@ public static class AnalysisEndpoints
         var message = extraction.Publication.IsPublished
             ? "This analysis was quality reviewed and published by BidMatrix. Every item remains linked to its source."
             : extraction.ExtractionStatus switch
-        {
-            "succeeded" => "Extraction is complete and is being quality reviewed before delivery.",
-            "partial" => "Extraction is in quality review. One or more files may require OCR or manual handling.",
-            "failed" => "Document extraction failed. No unverified requirements were fabricated.",
-            "processing" => "Digital PDF extraction is processing.",
-            _ => "Digital PDF extraction has not started.",
-        };
+            {
+                "succeeded" => "Extraction is complete and is being quality reviewed before delivery.",
+                "partial" => "Extraction is in quality review. One or more files may require OCR or manual handling.",
+                "failed" => "Document extraction failed. No unverified requirements were fabricated.",
+                "processing" => "Digital PDF extraction is processing.",
+                _ => "Digital PDF extraction has not started.",
+            };
         var showResults = !publishedOnly || extraction.Publication.IsPublished;
         var requirements = showResults
             ? extraction.Requirements.Where(item => item.ReviewStatus != "rejected").ToArray()

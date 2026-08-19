@@ -86,6 +86,51 @@ public sealed class AgentRuntimeTests(DatabaseFixture database)
     }
 
     [Fact]
+    public async Task ParallelAgentPreparationAndToolCallsSurviveSerializableConflicts()
+    {
+        using var factory = new BidMatrixApiFactory(database);
+        using var owner = factory.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            HandleCookies = true,
+            AllowAutoRedirect = false,
+        });
+        var currentUser = await LoginOwnerAsync(owner);
+        await AddCsrfTokenAsync(owner);
+        var organizationId = currentUser.Organizations.Single().OrganizationId;
+
+        var demoTasks = new List<AgentDemoTaskResponse>();
+        foreach (var agentKey in Enumerable.Range(0, 2).SelectMany(_ =>
+                     new[] { "executive", "support", "product-analyst", "engineering" }))
+        {
+            demoTasks.Add(await CreateDemoAsync(
+                owner,
+                agentKey,
+                $"parallel-agent-{agentKey}-{Guid.NewGuid():N}",
+                null));
+        }
+
+        using var internalClient = factory.CreateClient();
+        internalClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue(
+            "Bearer",
+            InternalServiceToken);
+
+        var preparations = await Task.WhenAll(demoTasks.Select(task =>
+            PrepareAsync(internalClient, task, organizationId)));
+        var artifactIds = await Task.WhenAll(preparations.Select(preparation =>
+            CreateOutputArtifactAsync(
+                internalClient,
+                preparation,
+                JsonSerializer.SerializeToElement(new
+                {
+                    status = "completed",
+                    summary = $"Parallel integration output for {preparation.AgentKey}",
+                }))));
+
+        Assert.Equal(demoTasks.Count, preparations.Length);
+        Assert.Equal(demoTasks.Count, artifactIds.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
     public async Task FailedStructuredRunCannotCompleteTask()
     {
         using var factory = new BidMatrixApiFactory(database);

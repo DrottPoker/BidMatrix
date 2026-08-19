@@ -26,7 +26,7 @@ export default function LoginPage() {
           <h2 className="mt-6 text-3xl font-semibold tracking-[-0.035em]">Welcome back</h2>
           <p className="mt-3 text-sm leading-6 text-muted">Sign in to open your organization&apos;s procurement workspace.</p>
           <LoginForm />
-          <p className="mt-6 text-center text-xs leading-5 text-muted">Access is limited to invited organization members.</p>
+          <p className="mt-6 text-center text-xs leading-5 text-muted">Every account receives its own private workspace.</p>
         </div>
       </section>
     </main>

@@ -207,6 +207,24 @@ Define organizations, memberships, roles, and tenant isolation from the start. F
 
 This is a Codex master plan. It includes architecture, repository layout, data model, APIs, workflows, agent contracts, security, tests, acceptance criteria, and phased implementation.
 
+## 2.11 SaaS-first sequencing decision
+
+Owner decision recorded 2026-08-11: build and operate a working SaaS before any agent begins to steer the company.
+
+The binding sequence is:
+
+1. stabilize and verify the local customer product;
+2. establish production identity, tenant onboarding, secure hosting, recovery, and observability;
+3. add the self-service commercial core, including billing, usage controls, customer administration, export, notifications, and retention controls;
+4. prove paid use, repeat demand, product quality, incident readiness, and sustainable operation;
+5. only then consider agent steering through a new owner-approved ADR.
+
+Until that later ADR, the four initial agents are deterministic, manually triggered regression demonstrations only. No agent schedule may be enabled. No agent may set goals, rank priorities, decide product scope, make customer decisions, control publication, operate in live model mode as a product dependency, or gain external side effects.
+
+The Python Temporal worker may continue to coordinate deterministic document processing. Workflow orchestration without business decision authority is not agent steering.
+
+This section supersedes later roadmap sequencing wherever there is a conflict. ADR 0010 defines the enforceable boundary.
+
 ---
 
 # 3. Core principles
@@ -2664,7 +2682,9 @@ Owner routes require:
 - CSRF protection;
 - audit event for every approval and system-control change.
 
-Future production should add phishing-resistant MFA.
+Future MFA requires a separate owner-approved decision with a usable recovery
+design. ADR 0017 intentionally keeps the first SaaS release on Better Auth
+email/password with optional Google and GitHub.
 
 ---
 
@@ -3132,6 +3152,18 @@ All F0 completion rules in Section 0.2 pass.
 
 The following is planning context, not initial Codex scope.
 
+## SaaS-first release sequence
+
+The owner decision in Section 2.11 changes the execution order after F2:
+
+- S0 - verified local SaaS baseline: dependency security, clean-stack build, automated F2 publication gate, current documentation, and frozen agent steering.
+- S1 - hosted concierge foundations: production identity, tenant provisioning, secure deployment, private storage, migrations, backups, restore verification, malware scanning, and observability.
+- S2 - self-service commercial core: customer administration, billing, usage enforcement, exports, notifications, retention controls, and operational support.
+- S3 - operating proof: paid customers, repeat usage, measured analysis quality, incident readiness, recovery evidence, and sustainable unit economics.
+- Autonomy decision - only after S3, and only through a new owner-approved ADR with explicit permissions, metrics, stop conditions, and rollback behavior.
+
+The F3 and F4 product capabilities below may be reorganized across S1 through S3 when they improve the customer product. F5 through F10 are blocked from execution until the autonomy decision gate is satisfied.
+
 ## F1 — Real document extraction prototype
 
 - digital PDF text extraction;
@@ -3188,6 +3220,8 @@ Release gate:
 - operational support workflows.
 
 ## F5 — Controlled support autonomy
+
+Blocked by the SaaS-first autonomy decision gate in Section 2.11 and ADR 0010.
 
 - real support inbox connector;
 - approved FAQ auto-send for narrow cases;

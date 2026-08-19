@@ -22,6 +22,20 @@ if (args is ["--healthcheck"])
     return await RunHealthCheckAsync();
 }
 
+if (args is ["--migrate-database"])
+{
+    var databaseOptions = CreateDatabaseCommandOptions();
+    await new DatabaseMigrator(databaseOptions).ApplyAsync();
+    return 0;
+}
+
+if (args is ["--verify-database-access"])
+{
+    var databaseOptions = CreateDatabaseCommandOptions();
+    await new DatabaseAccessVerifier(databaseOptions).VerifyAsync();
+    return 0;
+}
+
 var builder = WebApplication.CreateBuilder(args);
 
 const long maximumConfiguredUploadBytes = 100 * 1024 * 1024;
@@ -70,7 +84,7 @@ if (builder.Configuration["DATA_PROTECTION_KEYS_PATH"] is { Length: > 0 } dataPr
 
 builder.Services.AddHealthChecks();
 builder.Services.AddBidMatrixDatabase(builder.Configuration);
-builder.Services.AddBidMatrixIdentity();
+builder.Services.AddBidMatrixIdentity(builder.Configuration, builder.Environment);
 builder.Services.AddBidMatrixAnalysis(builder.Configuration, builder.Environment);
 builder.Services.AddBidMatrixToolGateway(builder.Configuration);
 builder.Services.AddBidMatrixAgentRuntime();
@@ -79,6 +93,14 @@ builder.Services.AddBidMatrixInternalFoundation();
 builder.Services.AddBidMatrixApiSecurity(builder.Configuration, builder.Environment);
 
 var app = builder.Build();
+
+if (args is ["--bootstrap-owner"])
+{
+    await app.Services.GetRequiredService<DatabaseMigrator>().ApplyAsync();
+    await app.Services.GetRequiredService<OwnerBootstrapService>().BootstrapInitialOwnerAsync();
+    await app.DisposeAsync();
+    return 0;
+}
 
 app.UseMiddleware<RequestCorrelationMiddleware>();
 app.UseExceptionHandler();
@@ -104,9 +126,9 @@ app.MapGet(
     .WithName("GetServiceInfo");
 
 app.MapHealthChecks("/health/live", new HealthCheckOptions
-    {
-        Predicate = _ => false,
-    })
+{
+    Predicate = _ => false,
+})
     .AllowAnonymous();
 app.MapHealthChecks("/health/ready")
     .AllowAnonymous();
@@ -117,6 +139,8 @@ if (app.Environment.IsDevelopment())
 }
 
 app.MapBidMatrixIdentityEndpoints();
+app.MapBidMatrixManagedOidcEndpoints();
+app.MapBidMatrixAccountSecurityEndpoints();
 app.MapBidMatrixAnalysisEndpoints();
 app.MapBidMatrixToolGatewayEndpoints();
 app.MapBidMatrixAgentRuntimeEndpoints();
@@ -148,6 +172,24 @@ static async Task<int> RunHealthCheckAsync()
     {
         return 1;
     }
+}
+
+static BidMatrixDataSourceOptions CreateDatabaseCommandOptions()
+{
+    var configuration = new ConfigurationManager();
+    configuration.AddEnvironmentVariables();
+
+    var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+        ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+        ?? Environments.Production;
+    if (string.Equals(environmentName, Environments.Development, StringComparison.OrdinalIgnoreCase))
+    {
+        configuration.AddUserSecrets<Program>(optional: true);
+    }
+
+    var options = DatabaseServiceCollectionExtensions.CreateOptions(configuration);
+    options.Validate();
+    return options;
 }
 
 public partial class Program;

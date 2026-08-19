@@ -4,7 +4,8 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { FilePlus2, Files, Gauge, LogOut, Settings2, ShieldCheck } from "lucide-react";
-import { apiGet, apiMutation, CurrentUser } from "@/lib/bidmatrix-api";
+import { authClient } from "@/lib/auth-client";
+import { CurrentUser, apiGet, apiMutation } from "@/lib/bidmatrix-api";
 
 const navigation = [
   { href: "/app", label: "Dashboard", icon: Gauge, exact: true },
@@ -17,6 +18,7 @@ export function CustomerShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const [user, setUser] = useState<CurrentUser | null>(null);
+  const [isSigningOut, setIsSigningOut] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -31,8 +33,26 @@ export function CustomerShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   async function logout() {
-    await apiMutation<void>("/v1/auth/logout", { method: "POST" });
-    router.push("/login");
+    if (isSigningOut) return;
+    setIsSigningOut(true);
+
+    try {
+      await apiMutation<unknown>("/v1/auth/logout", {
+        method: "POST",
+      });
+    } catch {
+      setIsSigningOut(false);
+      return;
+    }
+
+    try {
+      await authClient.signOut({
+        callbackURL: "/login",
+        disableRedirect: true,
+      });
+    } finally {
+      router.replace("/login");
+    }
     router.refresh();
   }
 
@@ -72,8 +92,13 @@ export function CustomerShell({ children }: { children: React.ReactNode }) {
               <p className="mt-0.5 truncate text-xs text-white/45">{user?.email ?? "Secure session"}</p>
             </div>
           </div>
-          <button className="mt-4 flex items-center gap-2 text-xs font-semibold text-white/55 transition hover:text-white" onClick={() => void logout()} type="button">
-            <LogOut size={14} /> Sign out
+          <button
+            className="mt-4 flex items-center gap-2 text-xs font-semibold text-white/55 transition hover:text-white disabled:cursor-wait disabled:opacity-60"
+            disabled={isSigningOut}
+            onClick={() => void logout()}
+            type="button"
+          >
+            <LogOut size={14} /> {isSigningOut ? "Signing out..." : "Sign out"}
           </button>
         </div>
       </aside>

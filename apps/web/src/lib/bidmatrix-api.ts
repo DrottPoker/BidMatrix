@@ -127,6 +127,82 @@ export type CurrentUser = {
   platformRoles: string[];
 };
 
+export type AuthenticationConfiguration = {
+  managedOidcEnabled: boolean;
+  managedOidcProviderName: string;
+  nativeLoginEnabled: boolean;
+  nativeRecoveryEnabled: boolean;
+  identityTransitionMode: boolean;
+};
+
+export type FederatedIdentity = {
+  id: string;
+  providerName: string;
+  issuer: string;
+  emailAtLink: string;
+  status: "active" | "revoked";
+  linkedAt: string;
+  lastAuthenticatedAt: string | null;
+  revokedAt: string | null;
+  version: number;
+};
+
+export type FederatedIdentityList = {
+  identities: FederatedIdentity[];
+  nativePasswordEnabled: boolean;
+};
+
+export type RevokedFederatedIdentity = {
+  identity: FederatedIdentity;
+  revokedSessionCount: number;
+};
+
+export type UserSession = {
+  id: string;
+  createdAt: string;
+  lastSeenAt: string;
+  absoluteExpiresAt: string;
+  revokedAt: string | null;
+  revokedReason: string | null;
+  status: "active" | "revoked" | "expired" | "idle";
+  isCurrent: boolean;
+  version: number;
+};
+
+export type UserSessionList = {
+  sessions: UserSession[];
+};
+
+export type AccountRecovery = {
+  id: string;
+  userId: string;
+  email: string;
+  displayName: string | null;
+  status: "pending" | "used" | "revoked" | "expired";
+  createdAt: string;
+  expiresAt: string;
+  usedAt: string | null;
+  revokedAt: string | null;
+  version: number;
+};
+
+export type AccountRecoveryList = {
+  recoveries: AccountRecovery[];
+};
+
+export type CreatedAccountRecovery = {
+  recovery: AccountRecovery;
+  token: string;
+  recoveryUrl: string;
+};
+
+export type AccountRecoveryInspection = {
+  recoveryId: string;
+  email: string;
+  status: "pending";
+  expiresAt: string;
+};
+
 type CsrfToken = {
   token: string;
   headerName: string;

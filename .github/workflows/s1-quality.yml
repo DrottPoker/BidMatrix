@@ -1,0 +1,63 @@
+name: S1 quality gate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.18.0
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.302
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - uses: astral-sh/setup-uv@v7
+        with:
+          version: 0.11.12
+      - run: npm --prefix apps/web ci
+      - run: npm --prefix apps/web audit --audit-level=high
+      - run: dotnet restore BidMatrix.slnx
+      - run: uv sync --project src/agents --locked
+      - run: docker compose --project-name bidmatrix-ci-tests --env-file .env.example up --detach --wait postgres
+      - run: npm run lint
+      - run: npm run typecheck
+      - run: npm run test
+      - run: npm run build
+      - run: dotnet format BidMatrix.slnx --verify-no-changes --no-restore
+      - run: dotnet build BidMatrix.slnx --configuration Release --no-restore
+      - run: dotnet list BidMatrix.slnx package --vulnerable --include-transitive
+      - run: dotnet test BidMatrix.slnx --configuration Release --no-build
+        env:
+          BIDMATRIX_TEST_POSTGRES_PORT: "55432"
+      - run: uv run --directory src/agents ruff check . --no-cache
+      - run: uv run --directory src/agents mypy
+      - run: uv run --directory src/agents pytest
+      - if: always()
+        run: docker compose --project-name bidmatrix-ci-tests --env-file .env.example down --volumes
+
+  compose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker compose --project-name bidmatrix-ci --env-file .env.example config --quiet
+      - run: docker compose --project-name bidmatrix-ci --env-file .env.example up --detach --build --wait
+      - run: pwsh ./scripts/verify-f2.ps1 -EnvFile .env.example -ComposeProjectName bidmatrix-ci
+      - if: always()
+        run: docker compose --project-name bidmatrix-ci --env-file .env.example logs --no-color
+      - if: always()
+        run: docker compose --project-name bidmatrix-ci --env-file .env.example down --volumes

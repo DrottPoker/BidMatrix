@@ -4,6 +4,8 @@ using System.Net.Http.Json;
 using BidMatrix.Contracts.Identity;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace BidMatrix.Api.IntegrationTests;
 
@@ -37,6 +39,68 @@ public sealed class AuthenticationAuthorizationTests(DatabaseFixture database)
             new LoginRequest(OwnerEmail, OwnerPassword));
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DevelopmentAuthenticationConfigurationKeepsManagedIdentityExplicitlyDisabled()
+    {
+        using var factory = new BidMatrixApiFactory(database);
+        using var client = factory.CreateClient();
+
+        var configuration = await client.GetFromJsonAsync<AuthenticationConfigurationResponse>(
+            "/v1/auth/configuration");
+
+        Assert.NotNull(configuration);
+        Assert.False(configuration.ManagedOidcEnabled);
+        Assert.True(configuration.NativeLoginEnabled);
+        Assert.True(configuration.NativeRecoveryEnabled);
+        Assert.False(configuration.IdentityTransitionMode);
+        Assert.Equal(
+            HttpStatusCode.NotFound,
+            (await client.GetAsync("/v1/auth/oidc/login")).StatusCode);
+    }
+
+    [Fact]
+    public async Task ManagedOnlyConfigurationDisablesNativeLoginRecoveryAndRemovedInvitationRoutes()
+    {
+        var overrides = new Dictionary<string, string?>
+        {
+            ["BIDMATRIX_OIDC_ENABLED"] = "true",
+            ["BIDMATRIX_API_PUBLIC_BASE_URL"] = "http://localhost:8080",
+            ["BIDMATRIX_OIDC_PROVIDER_NAME"] = "Test managed identity",
+            ["BIDMATRIX_OIDC_AUTHORITY"] = "http://identity.example.invalid",
+            ["BIDMATRIX_OIDC_CLIENT_ID"] = "test-client",
+            ["BIDMATRIX_OIDC_CLIENT_SECRET"] = "test-client-secret",
+            ["BIDMATRIX_OIDC_REQUIRE_HTTPS_METADATA"] = "false",
+            ["BIDMATRIX_NATIVE_LOGIN_ENABLED"] = "false",
+            ["BIDMATRIX_NATIVE_RECOVERY_ENABLED"] = "false",
+            ["BIDMATRIX_IDENTITY_TRANSITION_MODE"] = "false",
+        };
+        using var factory = new BidMatrixApiFactory(database, overrides);
+        Assert.Equal(
+            "true",
+            factory.Services.GetRequiredService<IConfiguration>()["BIDMATRIX_OIDC_ENABLED"]);
+        using var client = CreateCookieClient(factory);
+
+        var configuration = await client.GetFromJsonAsync<AuthenticationConfigurationResponse>(
+            "/v1/auth/configuration");
+        Assert.NotNull(configuration);
+        Assert.True(configuration.ManagedOidcEnabled);
+        Assert.False(configuration.NativeLoginEnabled);
+        Assert.False(configuration.NativeRecoveryEnabled);
+
+        await AddCsrfTokenAsync(client);
+        using var loginResponse = await client.PostAsJsonAsync(
+            "/v1/auth/login",
+            new LoginRequest(OwnerEmail, OwnerPassword));
+        Assert.Equal(HttpStatusCode.NotFound, loginResponse.StatusCode);
+
+        await AddCsrfTokenAsync(client);
+        using var recoveryResponse = await client.PostAsJsonAsync(
+            "/v1/auth/recovery/inspect",
+            new InspectAccountRecoveryRequest("a"));
+        Assert.Equal(HttpStatusCode.NotFound, recoveryResponse.StatusCode);
+
     }
 
     [Fact]
@@ -94,7 +158,11 @@ public sealed class AuthenticationAuthorizationTests(DatabaseFixture database)
         Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/v1/me")).StatusCode);
 
         await AddCsrfTokenAsync(client);
-        Assert.Equal(HttpStatusCode.NoContent, (await client.PostAsync("/v1/auth/logout", null)).StatusCode);
+        using var logoutResponse = await client.PostAsync("/v1/auth/logout", null);
+        Assert.Equal(HttpStatusCode.OK, logoutResponse.StatusCode);
+        var logout = await logoutResponse.Content.ReadFromJsonAsync<LogoutResponse>();
+        Assert.NotNull(logout);
+        Assert.True(logout.Success);
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/v1/me")).StatusCode);
     }
 
