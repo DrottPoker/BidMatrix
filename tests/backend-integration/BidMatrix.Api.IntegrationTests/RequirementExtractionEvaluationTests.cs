@@ -40,7 +40,8 @@ public sealed class RequirementExtractionEvaluationTests
             }
         }
 
-        Assert.Equal(5, expected);
+        Assert.Equal(5, evaluation.Documents.Count);
+        Assert.Equal(9, expected);
         Assert.Equal(expected, matched);
         Assert.Equal(1m, decimal.Divide(matched, expected));
     }

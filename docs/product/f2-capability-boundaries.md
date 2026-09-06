@@ -21,6 +21,8 @@ The customer flow is intentionally small:
 - Optimistic concurrency for review edits.
 - Original extracted text retained alongside corrected text.
 - Explicit owner publication gate before customer results become visible.
+- Searchable and filterable customer compliance matrix for published requirements.
+- Formula-safe CSV export with empty customer-status and response columns for continued spreadsheet work.
 - Review note, correction count, processing duration, reviewer identity, and publication time retained in the authoritative database and audit trail.
 - Tenant isolation and the F0 security boundaries remain active.
 
@@ -39,7 +41,7 @@ S0 does not convert F2 into a production SaaS. Later S1 slices now provide local
 - Team assignment, requirement ownership, and collaboration queues.
 - Customer-editable findings or automated customer approval.
 - OCR, handwriting recognition, and complex table reconstruction.
-- Customer exports, billing automation, notifications, and retention settings.
+- Styled PDF or native XLSX exports, billing automation, notifications, and retention settings. MVP v1 includes only the requirements CSV defined in `docs/product/mvp-v1.md`.
 - Customer-facing agents, prompts, workflows, tools, or approval infrastructure.
 - Agent schedules, live model operation, company steering, and agent-created priorities.
 - Live external actions, cloud deployment, and production operations.
@@ -56,4 +58,4 @@ The customer analysis path is deterministic and human-published. The Python work
 
 The local product can support controlled development and pilot preparation. F2 is not commercially validated until at least one pilot customer pays and repeat-analysis demand is measured. Those are business outcomes and cannot be satisfied by repository implementation alone.
 
-The current engineering gate is S1.1c managed hosted identity as defined in `docs/product/s1-hosted-concierge.md` and ADR 0012 through ADR 0017.
+The current local product gate is the intentionally small MVP v1 defined in `docs/product/mvp-v1.md`. Hosted S1.1c remains incomplete but was deferred by the owner on 2026-08-19 while the customer result and quality evidence are improved locally.

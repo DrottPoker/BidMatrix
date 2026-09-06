@@ -49,6 +49,42 @@
           "pageNumber": 1
         }
       ]
+    },
+    {
+      "id": "cybersecurity-services-rfp",
+      "documentType": "request_for_proposal",
+      "pages": [
+        "REQUEST FOR PROPOSAL\nSOC-001: The supplier must operate a 24/7 security operations center.\nAdditional reporting should be described separately.",
+        "INCIDENT RESPONSE\nINC-002: The supplier shall notify the customer of critical security incidents within 30 minutes.\nOptional tabletop exercises may be provided."
+      ],
+      "expectedMandatoryRequirements": [
+        {
+          "normalizedRequirement": "the supplier must operate a 24/7 security operations center",
+          "pageNumber": 1
+        },
+        {
+          "normalizedRequirement": "the supplier shall notify the customer of critical security incidents within 30 minutes",
+          "pageNumber": 2
+        }
+      ]
+    },
+    {
+      "id": "cloud-migration-tender",
+      "documentType": "invitation_to_tender",
+      "pages": [
+        "INVITATION TO TENDER\nREF-001: The bidder must provide three customer references for comparable cloud migrations.\nGeneral company brochures are optional.",
+        "MIGRATION PLAN\nMIG-002: The migration plan shall include a tested rollback procedure.\nThe bidder may provide additional diagrams."
+      ],
+      "expectedMandatoryRequirements": [
+        {
+          "normalizedRequirement": "the bidder must provide three customer references for comparable cloud migrations",
+          "pageNumber": 1
+        },
+        {
+          "normalizedRequirement": "the migration plan shall include a tested rollback procedure",
+          "pageNumber": 2
+        }
+      ]
     }
   ]
 }

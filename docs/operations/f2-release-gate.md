@@ -9,6 +9,8 @@ This is a historical regression contract. The current executable boundary is `do
 - Owner corrections preserve the original extraction and increment a version.
 - Stale review writes fail with HTTP 409.
 - Rejected items do not appear in the customer report.
+- Published requirements are searchable and filterable as a compliance matrix.
+- The requirements CSV retains exact source evidence, includes blank customer response columns, and neutralizes spreadsheet-formula prefixes.
 - No company match, score, bid or no-bid recommendation, billing, external action, cloud deployment, or production claim is present.
 - No agent schedule, agent steering, live model dependency, or customer-facing agent is introduced.
 
@@ -81,6 +83,7 @@ Local verification does not prove that GitHub Actions passed. The workflow must 
 - Verify desktop and mobile navigation.
 - Verify dashboard, empty states, loading states, errors, analysis list filters, upload progress, processing state, and published report.
 - Verify requirements, dates, requested documents, evaluation criteria, and citations at narrow and wide viewports.
+- Verify compliance-matrix search, filters, horizontal table navigation, source expansion, and CSV download.
 - Verify keyboard focus, readable contrast, and reduced-motion behavior.
 
 S0 changes no UI source, so the previous F2 visual result remains applicable. Any later UI change must repeat this inspection.
@@ -94,4 +97,4 @@ S0 changes no UI source, so the previous F2 visual result remains applicable. An
 
 ## Production stop boundary
 
-Passing this gate proves the F2 local product baseline. It does not authorize production identity, public hosting, billing, customer self-service, legal claims, or agent steering. Continue with the current S1 gate in `docs/product/s1-hosted-concierge.md`.
+Passing this gate proves the F2 local product baseline. It does not authorize production identity, public hosting, billing, legal claims, or agent steering. Continue by validating the intentionally small product loop in `docs/product/mvp-v1.md`; hosted deployment in `docs/product/s1-hosted-concierge.md` remains deferred until the owner resumes it.

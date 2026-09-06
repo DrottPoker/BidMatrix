@@ -2,7 +2,7 @@
 
 BidMatrix is a self-service concierge SaaS for RFP analysis. It uses Next.js and Tailwind CSS, ASP.NET Core, PostgreSQL, MinIO, Temporal, and a Python workflow worker.
 
-The product extracts digital English PDFs and publishes four source-linked result types after owner quality review: requirements, key dates, requested documents, and weighted evaluation criteria. Corrections retain the original extraction, rejected items remain hidden, and every visible item has an exact file, page, and quote citation.
+The product extracts digital English PDFs and publishes four source-linked result types after owner quality review: requirements, key dates, requested documents, and weighted evaluation criteria. Corrections retain the original extraction, rejected items remain hidden, and every visible item has an exact file, page, and quote citation. Published requirements are presented as a searchable compliance matrix with a formula-safe CSV export for continued work in Excel.
 
 Hosted Concierge S1 is active on top of the verified S0 baseline. A person can create, verify, sign in to, and recover an account with email and password. The first successful managed login creates a private BidMatrix workspace and an `owner` membership. It never grants platform roles or agent authority. Google and GitHub are deferred. Existing agent workflows remain deterministic, manually triggered regression demonstrations only.
 
@@ -104,6 +104,7 @@ The historical agent demonstrations are deterministic control-plane regressions.
 - `docs/architecture`: system topology and trust boundaries.
 - `docs/operations`: setup, migration, worker, incident, and release runbooks.
 - `docs/product`: customer capability contracts and the SaaS-first sequence.
+- `docs/product/mvp-v1.md`: the intentionally small first-version promise, required flow, and explicit scope freeze.
 - `BIDMATRIX_AI_COMPANY_MASTER_PLAN.md`: authoritative specification and long-term roadmap.
 
 Start with `docs/implementation-status.md`, `docs/product/s1-hosted-concierge.md`, and `docs/product/f2-capability-boundaries.md` before changing customer-visible behavior.

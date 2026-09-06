@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertCircle,
   ArrowLeft,
@@ -15,7 +15,6 @@ import {
   ListChecks,
   LoaderCircle,
   Quote,
-  Search,
   ShieldCheck,
   Sparkles,
 } from "lucide-react";
@@ -23,18 +22,18 @@ import {
   Analysis,
   AnalysisCitation,
   AnalysisFinding,
-  AnalysisRequirement,
   AnalysisRequirements,
   apiGet,
   formatApiError,
 } from "@/lib/bidmatrix-api";
+import { ComplianceMatrix } from "@/components/compliance-matrix";
 import { StatusPill, humanize } from "@/components/ui/status-pill";
 
 type Tab = "overview" | "requirements" | "dates" | "documents" | "evaluation";
 
 const tabs: { key: Tab; label: string; icon: typeof Gauge }[] = [
   { key: "overview", label: "Overview", icon: Gauge },
-  { key: "requirements", label: "Requirements", icon: ListChecks },
+  { key: "requirements", label: "Compliance matrix", icon: ListChecks },
   { key: "dates", label: "Key dates", icon: CalendarDays },
   { key: "documents", label: "Requested documents", icon: FileCheck2 },
   { key: "evaluation", label: "Evaluation", icon: ClipboardCheck },
@@ -44,7 +43,6 @@ export function AnalysisDetail({ analysisId, backHref = "/app/analyses" }: { ana
   const [analysis, setAnalysis] = useState<Analysis | null>(null);
   const [result, setResult] = useState<AnalysisRequirements | null>(null);
   const [tab, setTab] = useState<Tab>("overview");
-  const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -58,10 +56,6 @@ export function AnalysisDetail({ analysisId, backHref = "/app/analyses" }: { ana
       })
       .catch((requestError: unknown) => setError(formatApiError(requestError)));
   }, [analysisId]);
-
-  const filteredRequirements = useMemo(() => result?.requirements.filter((requirement) =>
-    `${requirement.requirementCode ?? ""} ${requirement.requirementText} ${requirement.category}`.toLowerCase().includes(query.toLowerCase()),
-  ) ?? [], [query, result]);
 
   if (error) {
     return <div className="page-shell"><ErrorState backHref={backHref} message={error} /></div>;
@@ -102,7 +96,7 @@ export function AnalysisDetail({ analysisId, backHref = "/app/analyses" }: { ana
                 const Icon = item.icon;
                 const count = item.key === "requirements" ? result.requirements.length : item.key === "dates" ? result.keyDates.length : item.key === "documents" ? result.requestedDocuments.length : item.key === "evaluation" ? result.evaluationCriteria.length : null;
                 return (
-                  <button className={`flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${tab === item.key ? "bg-ink text-white shadow-sm" : "text-muted hover:bg-white hover:text-foreground"}`} key={item.key} onClick={() => setTab(item.key)} type="button">
+                  <button aria-label={`${item.label}${count === null ? "" : ` (${count})`}`} className={`flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition ${tab === item.key ? "bg-ink text-white shadow-sm" : "text-muted hover:bg-white hover:text-foreground"}`} key={item.key} onClick={() => setTab(item.key)} type="button">
                     <Icon size={16} /> {item.label}{count !== null ? <span className={`rounded-full px-1.5 py-0.5 text-[10px] ${tab === item.key ? "bg-white/15" : "bg-surface-muted"}`}>{count}</span> : null}
                   </button>
                 );
@@ -111,7 +105,7 @@ export function AnalysisDetail({ analysisId, backHref = "/app/analyses" }: { ana
           </nav>
 
           {tab === "overview" ? <Overview result={result} onNavigate={setTab} /> : null}
-          {tab === "requirements" ? <Requirements requirements={filteredRequirements} query={query} setQuery={setQuery} total={result.requirements.length} /> : null}
+          {tab === "requirements" ? <ComplianceMatrix analysisTitle={analysis.title} requirements={result.requirements} /> : null}
           {tab === "dates" ? <FindingSection empty="No key dates were identified in the supplied documents." findings={result.keyDates} kind="date" /> : null}
           {tab === "documents" ? <FindingSection empty="No requested submission documents were identified." findings={result.requestedDocuments} kind="document" /> : null}
           {tab === "evaluation" ? <FindingSection empty="No weighted evaluation criteria were identified." findings={result.evaluationCriteria} kind="evaluation" /> : null}
@@ -122,6 +116,26 @@ export function AnalysisDetail({ analysisId, backHref = "/app/analyses" }: { ana
 }
 
 function ProcessingView({ analysis, result }: { analysis: Analysis; result: AnalysisRequirements }) {
+  if (analysis.status === "failed" || result.extractionStatus === "failed") {
+    return (
+      <AnalysisIssueView
+        analysis={analysis}
+        message={analysis.failureMessage ?? result.message}
+        title="This analysis needs attention"
+      />
+    );
+  }
+
+  if (analysis.status === "cancelled") {
+    return (
+      <AnalysisIssueView
+        analysis={analysis}
+        message="This analysis was cancelled before a result was published. Create a new analysis when you are ready to continue."
+        title="Analysis cancelled"
+      />
+    );
+  }
+
   const steps = [
     { label: "Documents received", complete: analysis.files.length > 0 },
     { label: "Content extracted", complete: ["succeeded", "partial"].includes(result.extractionStatus) },
@@ -137,6 +151,16 @@ function ProcessingView({ analysis, result }: { analysis: Analysis; result: Anal
           <p className="mt-3 max-w-2xl text-sm leading-7 text-white/65">{result.message}</p>
         </div>
         <div className="p-6 sm:p-8">
+          {result.metrics.failedFileCount > 0 || result.metrics.filesRequiringOcr > 0 ? (
+            <div className="mb-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950" role="status">
+              <p className="font-semibold">Some source documents need attention</p>
+              <p className="mt-1 text-xs leading-5 text-amber-900/75">
+                {result.metrics.failedFileCount > 0 ? `${result.metrics.failedFileCount} documents could not be extracted. ` : ""}
+                {result.metrics.filesRequiringOcr > 0 ? `${result.metrics.filesRequiringOcr} documents appear to require OCR, which is outside the first version. ` : ""}
+                Results remain hidden until the quality review is complete.
+              </p>
+            </div>
+          ) : null}
           <ol className="grid gap-5 sm:grid-cols-4">
             {steps.map((step, index) => (
               <li className="relative" key={step.label}>
@@ -154,6 +178,46 @@ function ProcessingView({ analysis, result }: { analysis: Analysis; result: Anal
         <h2 className="mt-2 font-semibold">{analysis.files.length} documents secured</h2>
         <ul className="mt-5 space-y-3">
           {analysis.files.map((file) => <li className="flex items-center gap-3 text-sm" key={file.id}><span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-muted text-brand"><FileText size={16} /></span><span className="min-w-0"><span className="block truncate font-semibold">{file.originalFileName}</span><span className="text-xs text-muted">{formatBytes(file.sizeBytes)}</span></span></li>)}
+        </ul>
+      </section>
+    </div>
+  );
+}
+
+function AnalysisIssueView({
+  analysis,
+  title,
+  message,
+}: {
+  analysis: Analysis;
+  title: string;
+  message: string;
+}) {
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_22rem]">
+      <section className="panel p-7 sm:p-9">
+        <span className="grid size-12 place-items-center rounded-2xl bg-red-50 text-red-700">
+          <AlertCircle size={22} />
+        </span>
+        <h2 className="mt-6 text-2xl font-semibold tracking-tight">{title}</h2>
+        <p className="mt-3 max-w-2xl text-sm leading-7 text-muted">{message}</p>
+        <p className="mt-5 rounded-xl bg-surface-muted px-4 py-3 text-xs leading-5 text-muted">
+          BidMatrix does not fabricate missing content. Use a digital English PDF and start a new analysis, or contact support if the file should be readable.
+        </p>
+      </section>
+      <section className="panel p-6">
+        <p className="eyebrow">Source package</p>
+        <h2 className="mt-2 font-semibold">{analysis.files.length} uploaded documents</h2>
+        <ul className="mt-5 space-y-3">
+          {analysis.files.map((file) => (
+            <li className="flex items-center gap-3 text-sm" key={file.id}>
+              <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-surface-muted text-brand"><FileText size={16} /></span>
+              <span className="min-w-0">
+                <span className="block truncate font-semibold">{file.originalFileName}</span>
+                <span className="text-xs text-muted">{formatBytes(file.sizeBytes)}</span>
+              </span>
+            </li>
+          ))}
         </ul>
       </section>
     </div>
@@ -188,40 +252,6 @@ function Overview({ result, onNavigate }: { result: AnalysisRequirements; onNavi
         </section>
       </div>
     </div>
-  );
-}
-
-function Requirements({ requirements, query, setQuery, total }: { requirements: AnalysisRequirement[]; query: string; setQuery: (value: string) => void; total: number }) {
-  return (
-    <section className="panel overflow-hidden">
-      <div className="flex flex-col justify-between gap-4 border-b border-ink/8 p-5 sm:flex-row sm:items-center sm:p-6">
-        <div><p className="eyebrow">Requirements</p><h2 className="mt-1.5 text-xl font-semibold">{total} extracted requirements</h2></div>
-        <label className="relative block sm:w-80"><Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-muted" size={16} /><span className="sr-only">Search requirements</span><input className="field h-10 pl-10" onChange={(event) => setQuery(event.target.value)} placeholder="Search requirements" type="search" value={query} /></label>
-      </div>
-      {requirements.length === 0 ? <EmptyState text="No requirements match your search." /> : <ol className="divide-y divide-ink/7">{requirements.map((requirement, index) => <RequirementRow index={index + 1} key={requirement.id} requirement={requirement} />)}</ol>}
-    </section>
-  );
-}
-
-function RequirementRow({ requirement, index }: { requirement: AnalysisRequirement; index: number }) {
-  return (
-    <li className="grid gap-4 p-5 sm:grid-cols-[2.5rem_minmax(0,1fr)] sm:p-6">
-      <span className="grid size-9 place-items-center rounded-xl bg-surface-muted text-xs font-bold text-muted">{String(index).padStart(2, "0")}</span>
-      <div>
-        <div className="flex flex-wrap items-center gap-2">
-          <span className={`rounded-full px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide ${requirement.mandatory ? "bg-red-50 text-red-800" : "bg-stone-100 text-stone-700"}`}>{requirement.mandatory ? "Mandatory" : "Optional"}</span>
-          <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wide text-emerald-800">Reviewed</span>
-          <span className="text-xs font-semibold text-muted">{humanize(requirement.category)}</span>
-          {requirement.requirementCode ? <span className="font-mono text-xs text-muted">{requirement.requirementCode}</span> : null}
-        </div>
-        <p className="mt-3 max-w-5xl text-[0.95rem] leading-7">{requirement.requirementText}</p>
-        {requirement.correctionNote ? <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-900">Review note: {requirement.correctionNote}</p> : null}
-        <details className="group mt-4">
-          <summary className="inline-flex list-none items-center gap-2 text-xs font-semibold text-brand"><Quote size={14} /> View source {requirement.citations.length > 1 ? `(${requirement.citations.length})` : ""}<ChevronDown className="transition group-open:rotate-180" size={14} /></summary>
-          <div className="mt-3 space-y-2">{requirement.citations.map((citation) => <Citation citation={citation} key={citation.id} />)}</div>
-        </details>
-      </div>
-    </li>
   );
 }
 

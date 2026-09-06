@@ -52,11 +52,47 @@ describe("AnalysisDetail", () => {
     render(<AnalysisDetail analysisId="analysis-1" />);
 
     expect(await screen.findByText("Quality reviewed")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: /Requirements 1/ }));
-    expect(screen.getByText("1 extracted requirements")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Compliance matrix (1)" }));
+    expect(screen.getByText("1 reviewed requirements")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download CSV" })).toBeInTheDocument();
     expect(screen.getByText("Mandatory")).toBeInTheDocument();
     expect(screen.getByText(/rfp\.pdf · Page 2/)).toBeInTheDocument();
     expect(screen.getAllByText(/ISO 27001 certificate/)).toHaveLength(2);
+  });
+
+  it("shows a clear terminal state when document processing fails", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/requirements")) {
+        return jsonResponse({
+          analysisId: "analysis-failed",
+          capabilityStatus: "unavailable",
+          extractionStatus: "failed",
+          extractionVersion: "pdfpig-0.1.15+rules-en-v1+findings-en-v1",
+          completedAt: "2026-08-19T10:00:00Z",
+          documents: [{ analysisFileId: "file-1", originalFileName: "scan.pdf", extractionStatus: "failed", documentType: null, pageCount: null, extractionMethod: null, failureCode: "pdf_text_extraction_failed" }],
+          requirements: [],
+          keyDates: [],
+          requestedDocuments: [],
+          evaluationCriteria: [],
+          publication: { analysisStatus: "failed", reviewedAt: null, publishedAt: null, reviewNote: null, correctionCount: 0, processingDurationMilliseconds: null, isPublished: false },
+          metrics: { documentCount: 1, pageCount: 0, requirementCount: 0, mandatoryRequirementCount: 0, citedRequirementCount: 0, keyDateCount: 0, requestedDocumentCount: 0, evaluationCriterionCount: 0, pendingReviewCount: 0, filesRequiringOcr: 1, failedFileCount: 1 },
+          message: "The PDF did not contain extractable digital text.",
+        });
+      }
+
+      return jsonResponse({
+        id: "analysis-failed", title: "Scanned RFP", status: "failed", sourceLanguage: "en", workflowId: "analysis-intake-analysis-failed", requiresHumanReview: true, failureCode: "pdf_text_extraction_failed", failureMessage: "The PDF did not contain extractable digital text.", createdAt: "2026-08-19T10:00:00Z", updatedAt: "2026-08-19T10:01:00Z", version: 3,
+        files: [{ id: "file-1", originalFileName: "scan.pdf", contentType: "application/pdf", sizeBytes: 1000, sha256: "b".repeat(64), scanStatus: "development_bypass", retentionUntil: null, createdAt: "2026-08-19T10:00:00Z" }],
+      });
+    }));
+
+    render(<AnalysisDetail analysisId="analysis-failed" />);
+
+    expect(await screen.findByText("This analysis needs attention")).toBeInTheDocument();
+    expect(screen.getByText("The PDF did not contain extractable digital text.")).toBeInTheDocument();
+    expect(screen.getByText(/does not fabricate missing content/i)).toBeInTheDocument();
+    expect(screen.queryByText("Your analysis is being prepared.")).not.toBeInTheDocument();
   });
 });
 
